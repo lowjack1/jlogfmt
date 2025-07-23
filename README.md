@@ -40,11 +40,11 @@ Jan 21 10:30:15 hostname service[1234]: [GIN] 2025/01/21 - 10:30:15 | 200 | GET 
 
 ```
 ┌──────────┬─────────────────────┬────────────────────────────────────────┬──────────────────────────────────────┐
-│ LEVEL    │ TIMESTAMP           │ MESSAGE                                │ FIELDS                                │
+│ LEVEL    │ TIMESTAMP           │ MESSAGE                                │ FIELDS                               │
 ├──────────┼─────────────────────┼────────────────────────────────────────┼──────────────────────────────────────┤
-│ INFO     │ 2025-01-21 10:30:15 │ Processing Message                     │ messageID=abc-123 language=en            │
+│ INFO     │ 2025-01-21 10:30:15 │ Processing Message                     │ messageID=abc-123 language=en        │
 ├──────────┼─────────────────────┼────────────────────────────────────────┼──────────────────────────────────────┤
-│ ERROR    │ 2025-01-21 10:30:16 │ Processing failed                      │ error="API timeout" messageID=abc-123    │
+│ ERROR    │ 2025-01-21 10:30:16 │ Processing failed                      │ error="API timeout" messageID=abc-123│
 └──────────┴─────────────────────┴────────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
@@ -60,7 +60,7 @@ Jan 21 10:30:15 hostname service[1234]: [GIN] 2025/01/21 - 10:30:15 | 200 | GET 
 ### Quick Install (Recommended)
 ```bash
 cd /path/to/project
-./install-log-viewer.sh
+./install.sh
 ```
 
 This creates convenient aliases:
