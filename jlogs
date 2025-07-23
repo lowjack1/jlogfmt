@@ -1,0 +1,79 @@
+#!/bin/bash
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Parse service name and command
+if [[ $# -eq 0 ]]; then
+    # No arguments - show help
+    echo "❗ Service name is required."
+    echo "Use 'jlogs help' to see usage."
+    exit 1
+elif [[ $# -eq 1 ]]; then
+    case "$1" in
+        "help"|"h"|"--help")
+            # Show help without requiring service name
+            SERVICE_NAME=""
+            COMMAND="help"
+            ;;
+        "follow"|"f"|"errors"|"e"|"today"|"t"|"table"|"table-follow")
+            echo "❗ Service name is required."
+            echo "Use 'jlogs help' to see usage."
+            exit 1
+            ;;
+        *)
+            SERVICE_NAME="$1"
+            COMMAND=""
+            ;;
+    esac
+else
+    SERVICE_NAME="$1"
+    COMMAND="$2"
+fi
+
+case "${COMMAND:-}" in
+    "follow"|"f")
+        echo "🔄 Following $SERVICE_NAME logs (Ctrl+C to exit)..."
+        journalctl -u "$SERVICE_NAME" -f | ccze -A
+        ;;
+    "errors"|"e")
+        echo "❌ Showing errors and warnings for $SERVICE_NAME..."
+        journalctl -u "$SERVICE_NAME" --since "1 hour ago" | grep -E "(ERROR|WARNING)" | ccze -A
+        ;;
+    "today"|"t")
+        echo "📅 Showing today's logs for $SERVICE_NAME..."
+        journalctl -u "$SERVICE_NAME" --since today | ccze -A
+        ;;
+    "table")
+        echo "📊 Table format (last hour) for $SERVICE_NAME..."
+        "$SCRIPT_DIR/jlogfmt" -h 1 -s "$SERVICE_NAME"
+        ;;
+    "table-follow")
+        echo "📊 Table format (following) for $SERVICE_NAME..."
+        "$SCRIPT_DIR/jlogfmt" -f -s "$SERVICE_NAME"
+        ;;
+    "help"|"h"|"--help")
+        echo "🔍 jlogs - JSON Log Viewer Commands:"
+        echo ""
+        echo "Usage: jlogs <service_name> [command]"
+        echo ""
+        echo "Commands:"
+        echo "  follow           Follow logs in real-time with colors"
+        echo "  errors           Show only errors and warnings"
+        echo "  today            Show today's logs"
+        echo "  table            Show last hour in table format (jlogfmt)"
+        echo "  table-follow     Follow logs in table format (jlogfmt)"
+        echo "  help             Show this help message"
+        echo ""
+        echo "Examples:"
+        echo "  jlogs nginx                # Show last hour of nginx logs"
+        echo "  jlogs nginx follow         # Follow nginx logs"
+        echo "  jlogs nginx errors         # Show nginx errors"
+        echo "  jlogs nginx table          # Beautiful table format with jlogfmt"
+        echo ""
+        echo "Advanced: Use ./jlogfmt for more options"
+        ;;
+    *)
+        echo "📄 Showing last hour of logs for $SERVICE_NAME..."
+        journalctl -u "$SERVICE_NAME" --since "1 hour ago" | ccze -A
+        ;;
+esac 
