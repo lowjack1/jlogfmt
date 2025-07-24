@@ -447,19 +447,25 @@ class TableRenderer:
             if "raw_fields" in entry.fields and len(entry.fields) == 1:
                 raw_content = str(entry.fields["raw_fields"]).strip()
                 if raw_content:
-                    field_lines = self.formatter.wrap_text(raw_content, self.layout.message_width - 4)  # Account for "├─ "
+                    # Indent field content by 2 spaces from message column
+                    field_lines = self.formatter.wrap_text(raw_content, self.layout.message_width - 6)  # Account for "  ├─ "
                     
                     for k, field_line in enumerate(field_lines):
                         if k == 0:
-                            field_formatted = f"{Colors.DIM_GRAY}├─ {Colors.CYAN}{field_line}{Colors.NC}"
+                            field_formatted = f"  {Colors.DIM_GRAY}├─ {Colors.CYAN}{field_line}{Colors.NC}"
                         else:
                             # Continuation lines with proper indentation
-                            field_formatted = f"   {Colors.CYAN}{field_line}{Colors.NC}"
+                            field_formatted = f"     {Colors.CYAN}{field_line}{Colors.NC}"
                         
-                        # Print field without table borders - just with proper spacing
-                        empty_level_space = " " * (self.layout.level_width + 3)  # level width + "│ "
-                        empty_timestamp_space = " " * (self.layout.timestamp_width + 3)  # timestamp width + "│ "
-                        print(f"{empty_level_space}{empty_timestamp_space}{field_formatted}")
+                        # Pad to exact message column width
+                        field_formatted = field_formatted.ljust(self.layout.message_width)
+                        
+                        # Print with proper table borders
+                        empty_level = "".ljust(self.layout.level_width)
+                        empty_timestamp = "".ljust(self.layout.timestamp_width)
+                        print(
+                            f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_formatted} {Colors.NC}"
+                        )
             else:
                 # Handle regular key-value fields
                 for key, value in entry.fields.items():
@@ -469,23 +475,28 @@ class TableRenderer:
                             # Format key and value with colors, handle wrapping separately
                             colored_key = f"{Colors.CYAN}{key}={Colors.NC}"
                             
-                            # Calculate available width for the value
-                            available_width = self.layout.message_width - len(f"├─ {key}=")
+                            # Calculate available width for the value (indent by 2 spaces from message column)
+                            available_width = self.layout.message_width - len(f"  ├─ {key}=")
                             value_wrapped = self.formatter.wrap_text(value_str, available_width)
                             
                             for k, value_line in enumerate(value_wrapped):
                                 if k == 0:
-                                    # First line with tree connector and colored key
-                                    field_formatted = f"{Colors.DIM_GRAY}├─ {colored_key}{Colors.CYAN}{value_line}{Colors.NC}"
+                                    # First line with tree connector and colored key (indented by 2 spaces)
+                                    field_formatted = f"  {Colors.DIM_GRAY}├─ {colored_key}{Colors.CYAN}{value_line}{Colors.NC}"
                                 else:
                                     # Continuation lines with proper indentation (no vertical bar)
-                                    indent_spaces = " " * (len(f"├─ {key}="))
+                                    indent_spaces = " " * (len(f"  ├─ {key}="))
                                     field_formatted = f"{indent_spaces}{Colors.CYAN}{value_line}{Colors.NC}"
                                 
-                                # Print field without table borders - just with proper spacing
-                                empty_level_space = " " * (self.layout.level_width + 3)  # level width + "│ "
-                                empty_timestamp_space = " " * (self.layout.timestamp_width + 3)  # timestamp width + "│ "
-                                print(f"{empty_level_space}{empty_timestamp_space}{field_formatted}")
+                                # Pad to exact message column width
+                                field_formatted = field_formatted.ljust(self.layout.message_width)
+                                
+                                # Print with proper table borders
+                                empty_level = "".ljust(self.layout.level_width)
+                                empty_timestamp = "".ljust(self.layout.timestamp_width)
+                                print(
+                                    f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_formatted} {Colors.NC}"
+                                )
 
 
 class LogFormatter:
