@@ -741,25 +741,92 @@ class LogFormatter:
         input_stream = input_stream or sys.stdin
 
         try:
-            # Parse all log entries
-            entries = self._parse_all_entries(input_stream)
-            if not entries:
-                self.logger.warning("No valid log entries found")
-                return
-
-            # Determine layout
-            has_fields_column = self.analyzer.should_show_fields_column(entries)
-            layout = self.layout_calculator.calculate_layout(has_fields_column)
-
-            # Render table
-            renderer = TableRenderer(layout)
-            self._render_table(renderer, entries)
+            # Check if this is a streaming mode (like from journalctl -f)
+            # by trying to read with a small timeout
+            is_streaming = self._is_streaming_input(input_stream)
+            
+            if is_streaming:
+                self._format_streaming_logs(input_stream)
+            else:
+                self._format_batch_logs(input_stream)
 
         except KeyboardInterrupt:
             self.logger.info("Formatting interrupted by user")
         except Exception as e:
             self.logger.error(f"Error formatting logs: {e}")
             raise
+
+    def _is_streaming_input(self, input_stream) -> bool:
+        """Detect if input is streaming (like from journalctl -f)."""
+        # Check if we're running with the -f flag (passed through environment or args)
+        import os
+        
+        # Check if parent process contains journalctl with -f
+        try:
+            import psutil
+            parent = psutil.Process().parent()
+            if parent and 'journalctl' in parent.name() and '-f' in ' '.join(parent.cmdline()):
+                return True
+        except:
+            pass
+        
+        # Check environment variable that can be set by the calling script
+        if os.environ.get('JLOGFMT_STREAMING', '').lower() == 'true':
+            return True
+            
+        # Fallback: if stdin is not a tty and we have piped input, assume streaming for safety
+        return not input_stream.isatty()
+
+    def _format_streaming_logs(self, input_stream) -> None:
+        """Format logs in streaming mode - process line by line."""
+        header_printed = False
+        layout = None
+        renderer = None
+        entry_count = 0
+
+        for line in input_stream:
+            try:
+                entry = self.parser.parse_line(line)
+                if not entry:
+                    continue
+
+                # Initialize layout and renderer on first valid entry
+                if not header_printed:
+                    # For streaming, assume 3-column layout initially
+                    layout = self.layout_calculator.calculate_layout(False)
+                    renderer = TableRenderer(layout)
+                    renderer.render_header()
+                    header_printed = True
+
+                # Add separator between entries (except for first)
+                if entry_count > 0:
+                    renderer.render_separator()
+                
+                renderer.render_entry(entry, entry_count == 0)
+                entry_count += 1
+                
+                # Flush output for real-time display
+                sys.stdout.flush()
+
+            except Exception as e:
+                self.logger.debug(f"Failed to parse line: {e}")
+                continue
+
+    def _format_batch_logs(self, input_stream) -> None:
+        """Format logs in batch mode - original behavior."""
+        # Parse all log entries
+        entries = self._parse_all_entries(input_stream)
+        if not entries:
+            self.logger.warning("No valid log entries found")
+            return
+
+        # Determine layout
+        has_fields_column = self.analyzer.should_show_fields_column(entries)
+        layout = self.layout_calculator.calculate_layout(has_fields_column)
+
+        # Render table
+        renderer = TableRenderer(layout)
+        self._render_table(renderer, entries)
 
     def _parse_all_entries(self, input_stream) -> List[LogEntry]:
         """Parse all log entries from input stream."""
