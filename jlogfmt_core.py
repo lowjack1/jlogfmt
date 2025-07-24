@@ -263,8 +263,8 @@ class TableLayoutCalculator:
 
     def calculate_layout(self) -> TableLayout:
         """Calculate optimal column widths for 3-column layout."""
-        # Border overhead: 3 separators + 6 spaces + 2 buffer for terminal wrapping
-        border_overhead = 11
+        # Border overhead: 2 left separators + 4 spaces (no right border now)
+        border_overhead = 6
         available_width = (
             self.terminal_width
             - self.LEVEL_WIDTH
@@ -272,18 +272,9 @@ class TableLayoutCalculator:
             - border_overhead
         )
         
-        # Set reasonable bounds for message width
-        # Min: 30 characters, Max: 120 characters (or 70% of available width, whichever is smaller)
-        max_message_width = min(120, int(available_width * 0.7))
-        message_width = max(30, min(max_message_width, available_width))
-
-        # Prevent overflow
-        actual_total = (
-            self.LEVEL_WIDTH + self.TIMESTAMP_WIDTH + message_width + border_overhead
-        )
-        if actual_total > self.terminal_width:
-            excess = actual_total - self.terminal_width
-            message_width = max(30, message_width - excess)
+        # Now that we don't have a right border, use all available width for message
+        # Still set a reasonable minimum
+        message_width = max(30, available_width)
 
         return TableLayout(
             level_width=self.LEVEL_WIDTH,
