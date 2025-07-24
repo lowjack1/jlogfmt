@@ -431,15 +431,23 @@ class TextFormatter:
 
         # Handle legacy raw fields
         if "raw_fields" in fields and len(fields) == 1:
-            return str(fields["raw_fields"])
+            raw_content = str(fields["raw_fields"]).strip()
+            return raw_content if raw_content else ""
 
-        # Format as key=value pairs
+        # Format as key=value pairs with better separation
         parts = []
         for key, value in fields.items():
             if key != "raw_fields" and value is not None:
-                parts.append(f"{key}={value}")
+                value_str = str(value).strip()
+                if value_str:
+                    # Use a visually distinct format for key-value pairs
+                    parts.append(f"{key}={value_str}")
 
-        return " ".join(parts)
+        if not parts:
+            return ""
+            
+        # Join with a subtle separator for better readability
+        return " • ".join(parts)
 
     @staticmethod
     def format_timestamp(timestamp: str) -> str:
@@ -694,16 +702,17 @@ class TableRenderer:
         level_color = LogLevelMapper.get_color(entry.level)
         timestamp = self.formatter.format_timestamp(entry.timestamp)
 
-        # Merge message and fields for 3-column layout
+        # Build formatted message with clear field separation
         message_parts = []
         if entry.message:
             message_parts.append(entry.message)
 
         fields_text = self.formatter.format_fields(entry.fields)
         if fields_text:
-            message_parts.append(fields_text)
+            # Use a clearer separator with colors for better distinction
+            message_parts.append(f"{Colors.DIM_GRAY}[{Colors.CYAN}{fields_text}{Colors.DIM_GRAY}]{Colors.NC}")
 
-        merged_message = " | ".join(message_parts) if message_parts else ""
+        merged_message = " ".join(message_parts) if message_parts else ""
         message_lines = self.formatter.wrap_text(
             merged_message, self.layout.message_width
         )
