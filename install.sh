@@ -2,8 +2,7 @@
 
 # Install jlogfmt - JSON Log Formatter utilities
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "🚀 Installing jlogfmt - JSON Log Formatter utilities..."
 
