@@ -698,25 +698,20 @@ class TableRenderer:
                 )
 
     def _render_three_column_entry(self, entry: LogEntry) -> None:
-        """Render entry in 3-column format with merged message and fields."""
+        """Render entry in 3-column format with fields on separate lines."""
         level_color = LogLevelMapper.get_color(entry.level)
         timestamp = self.formatter.format_timestamp(entry.timestamp)
 
-        # Build formatted message with clear field separation
-        message_parts = []
-        if entry.message:
-            message_parts.append(entry.message)
-
+        # Handle message and fields separately
+        message = entry.message or ""
         fields_text = self.formatter.format_fields(entry.fields)
-        if fields_text:
-            # Use a clearer separator with colors for better distinction
-            message_parts.append(f"{Colors.DIM_GRAY}[{Colors.CYAN}{fields_text}{Colors.DIM_GRAY}]{Colors.NC}")
-
-        merged_message = " ".join(message_parts) if message_parts else ""
+        
+        # Wrap the main message
         message_lines = self.formatter.wrap_text(
-            merged_message, self.layout.message_width
-        )
+            message, self.layout.message_width
+        ) if message else [""]
 
+        # Render the main message lines first
         for i, msg_part in enumerate(message_lines):
             msg_part = msg_part.ljust(self.layout.message_width)
 
@@ -728,11 +723,27 @@ class TableRenderer:
                     f"{Colors.DIM_GRAY}│{Colors.NC}{level_color}{Colors.BOLD} {level_padded} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {timestamp_padded} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.NC}"
                 )
             else:
-                # Continuation lines
+                # Continuation lines for message
                 empty_level = "".ljust(self.layout.level_width)
                 empty_timestamp = "".ljust(self.layout.timestamp_width)
                 print(
                     f"{Colors.DIM_GRAY}│{Colors.NC}{Colors.WHITE} {empty_level} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.NC}"
+                )
+
+        # Add fields on separate lines if they exist
+        if fields_text:
+            # Format fields with indentation and color
+            fields_formatted = f"{Colors.DIM_GRAY}└─ {Colors.CYAN}{fields_text}{Colors.NC}"
+            fields_lines = self.formatter.wrap_text(
+                fields_formatted, self.layout.message_width, "   "  # 3-space continuation indent
+            )
+            
+            for field_line in fields_lines:
+                field_line = field_line.ljust(self.layout.message_width)
+                empty_level = "".ljust(self.layout.level_width)
+                empty_timestamp = "".ljust(self.layout.timestamp_width)
+                print(
+                    f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_line} {Colors.NC}"
                 )
 
 
