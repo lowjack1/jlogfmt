@@ -77,13 +77,11 @@ class LogEntry:
 
 @dataclass
 class TableLayout:
-    """Table layout configuration."""
+    """Table layout configuration for 3-column display."""
 
     level_width: int
     timestamp_width: int
     message_width: int
-    fields_width: int
-    has_fields_column: bool
     terminal_width: int
 
 
@@ -252,7 +250,6 @@ class TableLayoutCalculator:
     LEVEL_WIDTH = 8
     TIMESTAMP_WIDTH = 19
     MIN_MESSAGE_WIDTH = 25
-    MIN_FIELDS_WIDTH = 20
 
     def __init__(self, terminal_width: int = None):
         self.terminal_width = terminal_width or self._get_terminal_width()
@@ -264,63 +261,8 @@ class TableLayoutCalculator:
         except (OSError, ValueError):
             return 120  # Fallback width
 
-    def calculate_layout(self, has_fields_column: bool) -> TableLayout:
-        """Calculate optimal column widths."""
-        if has_fields_column:
-            return self._calculate_four_column_layout()
-        else:
-            return self._calculate_three_column_layout()
-
-    def _calculate_four_column_layout(self) -> TableLayout:
-        """Calculate layout for LEVEL | TIMESTAMP | MESSAGE | FIELDS."""
-        # Border overhead: 4 separators + 8 spaces
-        border_overhead = 12
-        available_width = (
-            self.terminal_width
-            - self.LEVEL_WIDTH
-            - self.TIMESTAMP_WIDTH
-            - border_overhead
-        )
-
-        # Split remaining space: 45% message, 55% fields
-        message_width = max(self.MIN_MESSAGE_WIDTH, int(available_width * 0.45))
-        fields_width = available_width - message_width
-
-        # Ensure minimum widths
-        if fields_width < self.MIN_FIELDS_WIDTH:
-            fields_width = self.MIN_FIELDS_WIDTH
-            message_width = available_width - fields_width
-
-        if message_width < self.MIN_MESSAGE_WIDTH:
-            message_width = self.MIN_MESSAGE_WIDTH
-            fields_width = available_width - message_width
-
-        # Final adjustment to prevent overflow
-        actual_total = (
-            self.LEVEL_WIDTH
-            + self.TIMESTAMP_WIDTH
-            + message_width
-            + fields_width
-            + border_overhead
-        )
-        if actual_total > self.terminal_width:
-            excess = actual_total - self.terminal_width
-            if fields_width > message_width:
-                fields_width = max(self.MIN_FIELDS_WIDTH, fields_width - excess)
-            else:
-                message_width = max(self.MIN_MESSAGE_WIDTH, message_width - excess)
-
-        return TableLayout(
-            level_width=self.LEVEL_WIDTH,
-            timestamp_width=self.TIMESTAMP_WIDTH,
-            message_width=message_width,
-            fields_width=fields_width,
-            has_fields_column=True,
-            terminal_width=self.terminal_width,
-        )
-
-    def _calculate_three_column_layout(self) -> TableLayout:
-        """Calculate layout for LEVEL | TIMESTAMP | MESSAGE."""
+    def calculate_layout(self) -> TableLayout:
+        """Calculate optimal column widths for 3-column layout."""
         # Border overhead: 3 separators + 6 spaces
         border_overhead = 9
         available_width = (
@@ -343,57 +285,7 @@ class TableLayoutCalculator:
             level_width=self.LEVEL_WIDTH,
             timestamp_width=self.TIMESTAMP_WIDTH,
             message_width=message_width,
-            fields_width=0,
-            has_fields_column=False,
             terminal_width=self.terminal_width,
-        )
-
-
-class ContentAnalyzer:
-    """Analyzes log content to determine optimal display layout."""
-
-    def __init__(self):
-        self.substantial_fields_threshold = 0.25
-        self.min_substantial_logs = 2
-
-    def should_show_fields_column(self, entries: List[LogEntry]) -> bool:
-        """Determine if a separate fields column should be shown."""
-        if not entries:
-            return False
-
-        substantial_count = sum(
-            1 for entry in entries if self._has_substantial_fields(entry)
-        )
-        substantial_ratio = substantial_count / len(entries)
-
-        return (
-            substantial_count >= self.min_substantial_logs
-            and substantial_ratio >= self.substantial_fields_threshold
-        )
-
-    def _has_substantial_fields(self, entry: LogEntry) -> bool:
-        """Check if log entry has substantial field data."""
-        if not entry.fields:
-            return False
-
-        # Filter out empty or standard fields
-        meaningful_fields = {
-            k: v
-            for k, v in entry.fields.items()
-            if v and k not in ["raw_fields"] and str(v).strip()
-        }
-
-        if not meaningful_fields:
-            return False
-
-        # Check for legacy format with substantial raw fields
-        if "raw_fields" in entry.fields:
-            raw_fields = str(entry.fields["raw_fields"]).strip()
-            return len(raw_fields) > 10
-
-        # Check for multiple fields or complex values
-        return len(meaningful_fields) >= 2 or any(
-            len(str(v)) > 20 for v in meaningful_fields.values()
         )
 
 
@@ -422,25 +314,6 @@ class TextFormatter:
             lines.append(current_line.ljust(width))
 
         return lines if lines else ["".ljust(width)]
-
-    @staticmethod
-    def format_fields(fields: Dict[str, Any]) -> List[str]:
-        """Format fields dictionary into a list of display strings, one per field."""
-        if not fields:
-            return []
-
-        if "raw_fields" in fields and len(fields) == 1:
-            raw_content = str(fields["raw_fields"]).strip()
-            return [raw_content] if raw_content else []
-
-        field_lines = []
-        for key, value in fields.items():
-            if key != "raw_fields" and value is not None:
-                value_str = str(value).strip()
-                if value_str:
-                    field_lines.append(f"{key}={value_str}")
-
-        return field_lines
 
     @staticmethod
     def format_timestamp(timestamp: str) -> str:
@@ -473,236 +346,83 @@ class TableRenderer:
 
     def render_header(self) -> None:
         """Render table header."""
-        if self.layout.has_fields_column:
-            self._render_four_column_header()
-        else:
-            self._render_three_column_header()
+        l, t, m = (
+            self.layout.level_width,
+            self.layout.timestamp_width,
+            self.layout.message_width,
+        )
+
+        border = (
+            f"{Colors.DIM_GRAY}┌"
+            + "─" * (l + 2)
+            + "┬"
+            + "─" * (t + 2)
+            + "┬"
+            + "─" * (m + 2)
+            + "┐"
+            + f"{Colors.NC}"
+        )
+        header = f'{Colors.DIM_GRAY}│{Colors.NC} {"LEVEL".ljust(l)} {Colors.DIM_GRAY}│{Colors.NC} {"TIMESTAMP".ljust(t)} {Colors.DIM_GRAY}│{Colors.NC} {"MESSAGE".ljust(m)} {Colors.DIM_GRAY}│{Colors.NC}'
+        separator = (
+            f"{Colors.DIM_GRAY}├"
+            + "─" * (l + 2)
+            + "┼"
+            + "─" * (t + 2)
+            + "┼"
+            + "─" * (m + 2)
+            + "┤"
+            + f"{Colors.NC}"
+        )
+
+        print(border)
+        print(header)
+        print(separator)
 
     def render_footer(self) -> None:
         """Render table footer."""
-        if self.layout.has_fields_column:
-            self._render_four_column_footer()
-        else:
-            self._render_three_column_footer()
+        l, t, m = (
+            self.layout.level_width,
+            self.layout.timestamp_width,
+            self.layout.message_width,
+        )
+        footer = (
+            f"{Colors.DIM_GRAY}└"
+            + "─" * (l + 2)
+            + "┴"
+            + "─" * (t + 2)
+            + "┴"
+            + "─" * (m + 2)
+            + "┘"
+            + f"{Colors.NC}"
+        )
+        print(footer)
 
     def render_separator(self) -> None:
         """Render row separator."""
-        if self.layout.has_fields_column:
-            self._render_four_column_separator()
-        else:
-            self._render_three_column_separator()
+        l, t, m = (
+            self.layout.level_width,
+            self.layout.timestamp_width,
+            self.layout.message_width,
+        )
+        separator = (
+            f"{Colors.DIM_GRAY}├"
+            + "─" * (l + 2)
+            + "┼"
+            + "─" * (t + 2)
+            + "┼"
+            + "─" * (m + 2)
+            + "┤"
+            + f"{Colors.NC}"
+        )
+        print(separator)
 
     def render_entry(self, entry: LogEntry, is_first: bool = True) -> None:
-        """Render a single log entry."""
-        if self.layout.has_fields_column:
-            self._render_four_column_entry(entry)
-        else:
-            self._render_three_column_entry(entry)
-
-    def _render_four_column_header(self) -> None:
-        """Render 4-column header: LEVEL | TIMESTAMP | MESSAGE | FIELDS."""
-        l, t, m, f = (
-            self.layout.level_width,
-            self.layout.timestamp_width,
-            self.layout.message_width,
-            self.layout.fields_width,
-        )
-
-        border = (
-            f"{Colors.DIM_GRAY}┌"
-            + "─" * (l + 2)
-            + "┬"
-            + "─" * (t + 2)
-            + "┬"
-            + "─" * (m + 2)
-            + "┬"
-            + "─" * (f + 2)
-            + f"{Colors.NC}"
-        )
-        header = f'{Colors.DIM_GRAY}│{Colors.NC} {"LEVEL".ljust(l)} {Colors.DIM_GRAY}│{Colors.NC} {"TIMESTAMP".ljust(t)} {Colors.DIM_GRAY}│{Colors.NC} {"MESSAGE".ljust(m)} {Colors.DIM_GRAY}│{Colors.NC} {"FIELDS".ljust(f)} {Colors.NC}'
-        separator = (
-            f"{Colors.DIM_GRAY}├"
-            + "─" * (l + 2)
-            + "┼"
-            + "─" * (t + 2)
-            + "┼"
-            + "─" * (m + 2)
-            + "┼"
-            + "─" * (f + 2)
-            + f"{Colors.NC}"
-        )
-
-        print(border)
-        print(header)
-        print(separator)
-
-    def _render_three_column_header(self) -> None:
-        """Render 3-column header: LEVEL | TIMESTAMP | MESSAGE."""
-        l, t, m = (
-            self.layout.level_width,
-            self.layout.timestamp_width,
-            self.layout.message_width,
-        )
-
-        border = (
-            f"{Colors.DIM_GRAY}┌"
-            + "─" * (l + 2)
-            + "┬"
-            + "─" * (t + 2)
-            + "┬"
-            + "─" * (m + 2)
-            + f"{Colors.NC}"
-        )
-        header = f'{Colors.DIM_GRAY}│{Colors.NC} {"LEVEL".ljust(l)} {Colors.DIM_GRAY}│{Colors.NC} {"TIMESTAMP".ljust(t)} {Colors.DIM_GRAY}│{Colors.NC} {"MESSAGE".ljust(m)} {Colors.NC}'
-        separator = (
-            f"{Colors.DIM_GRAY}├"
-            + "─" * (l + 2)
-            + "┼"
-            + "─" * (t + 2)
-            + "┼"
-            + "─" * (m + 2)
-            + f"{Colors.NC}"
-        )
-
-        print(border)
-        print(header)
-        print(separator)
-
-    def _render_four_column_footer(self) -> None:
-        """Render 4-column footer."""
-        l, t, m, f = (
-            self.layout.level_width,
-            self.layout.timestamp_width,
-            self.layout.message_width,
-            self.layout.fields_width,
-        )
-        footer = (
-            f"{Colors.DIM_GRAY}└"
-            + "─" * (l + 2)
-            + "┴"
-            + "─" * (t + 2)
-            + "┴"
-            + "─" * (m + 2)
-            + "┴"
-            + "─" * (f + 2)
-            + f"{Colors.NC}"
-        )
-        print(footer)
-
-    def _render_three_column_footer(self) -> None:
-        """Render 3-column footer."""
-        l, t, m = (
-            self.layout.level_width,
-            self.layout.timestamp_width,
-            self.layout.message_width,
-        )
-        footer = (
-            f"{Colors.DIM_GRAY}└"
-            + "─" * (l + 2)
-            + "┴"
-            + "─" * (t + 2)
-            + "┴"
-            + "─" * (m + 2)
-            + f"{Colors.NC}"
-        )
-        print(footer)
-
-    def _render_four_column_separator(self) -> None:
-        """Render 4-column row separator."""
-        l, t, m, f = (
-            self.layout.level_width,
-            self.layout.timestamp_width,
-            self.layout.message_width,
-            self.layout.fields_width,
-        )
-        separator = (
-            f"{Colors.DIM_GRAY}├"
-            + "─" * (l + 2)
-            + "┼"
-            + "─" * (t + 2)
-            + "┼"
-            + "─" * (m + 2)
-            + "┼"
-            + "─" * (f + 2)
-            + f"{Colors.NC}"
-        )
-        print(separator)
-
-    def _render_three_column_separator(self) -> None:
-        """Render 3-column row separator."""
-        l, t, m = (
-            self.layout.level_width,
-            self.layout.timestamp_width,
-            self.layout.message_width,
-        )
-        separator = (
-            f"{Colors.DIM_GRAY}├"
-            + "─" * (l + 2)
-            + "┼"
-            + "─" * (t + 2)
-            + "┼"
-            + "─" * (m + 2)
-            + f"{Colors.NC}"
-        )
-        print(separator)
-
-    def _render_four_column_entry(self, entry: LogEntry) -> None:
-        """Render entry in 4-column format."""
-        level_color = LogLevelMapper.get_color(entry.level)
-        timestamp = self.formatter.format_timestamp(entry.timestamp)
-
-        message_lines = self.formatter.wrap_text(
-            entry.message, self.layout.message_width
-        )
-        field_strings = self.formatter.format_fields(entry.fields)
-        
-        # Create field lines by wrapping each field and combining them
-        all_field_lines = []
-        for field_str in field_strings:
-            wrapped_field_lines = self.formatter.wrap_text(field_str, self.layout.fields_width)
-            all_field_lines.extend(wrapped_field_lines)
-        
-        # Ensure we have at least one empty line for fields column
-        if not all_field_lines:
-            all_field_lines = ["".ljust(self.layout.fields_width)]
-
-        max_lines = max(len(message_lines), len(all_field_lines))
-
-        for i in range(max_lines):
-            msg_part = (
-                message_lines[i]
-                if i < len(message_lines)
-                else "".ljust(self.layout.message_width)
-            )
-            field_part = (
-                all_field_lines[i]
-                if i < len(all_field_lines)
-                else "".ljust(self.layout.fields_width)
-            )
-
-            if i == 0:
-                # First line with level and timestamp
-                level_padded = entry.level.ljust(self.layout.level_width)
-                timestamp_padded = timestamp.ljust(self.layout.timestamp_width)
-                print(
-                    f"{Colors.DIM_GRAY}│{Colors.NC}{level_color}{Colors.BOLD} {level_padded} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {timestamp_padded} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.DIM_GRAY}│{Colors.NC} {field_part} {Colors.NC}"
-                )
-            else:
-                # Continuation lines
-                empty_level = "".ljust(self.layout.level_width)
-                empty_timestamp = "".ljust(self.layout.timestamp_width)
-                print(
-                    f"{Colors.DIM_GRAY}│{Colors.NC}{Colors.WHITE} {empty_level} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.DIM_GRAY}│{Colors.NC} {field_part} {Colors.NC}"
-                )
-
-    def _render_three_column_entry(self, entry: LogEntry) -> None:
-        """Render entry in 3-column format with fields on separate lines."""
+        """Render a single log entry in 3-column format with fields on separate lines."""
         level_color = LogLevelMapper.get_color(entry.level)
         timestamp = self.formatter.format_timestamp(entry.timestamp)
 
         # Handle message and fields separately
         message = entry.message or ""
-        field_strings = self.formatter.format_fields(entry.fields)
         
         # Wrap the main message
         message_lines = self.formatter.wrap_text(
@@ -718,39 +438,65 @@ class TableRenderer:
                 level_padded = entry.level.ljust(self.layout.level_width)
                 timestamp_padded = timestamp.ljust(self.layout.timestamp_width)
                 print(
-                    f"{Colors.DIM_GRAY}│{Colors.NC}{level_color}{Colors.BOLD} {level_padded} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {timestamp_padded} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.NC}"
+                    f"{Colors.DIM_GRAY}│{Colors.NC}{level_color}{Colors.BOLD} {level_padded} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {timestamp_padded} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.DIM_GRAY}│{Colors.NC}"
                 )
             else:
                 # Continuation lines for message
                 empty_level = "".ljust(self.layout.level_width)
                 empty_timestamp = "".ljust(self.layout.timestamp_width)
                 print(
-                    f"{Colors.DIM_GRAY}│{Colors.NC}{Colors.WHITE} {empty_level} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.NC}"
+                    f"{Colors.DIM_GRAY}│{Colors.NC}{Colors.WHITE} {empty_level} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.DIM_GRAY}│{Colors.NC}"
                 )
 
         # Add each field on its own line if they exist
-        if field_strings:
-            for j, field_str in enumerate(field_strings):
-                # Format each field with indentation and color
-                if j == 0:
-                    # First field with tree connector
-                    field_prefix = f"{Colors.DIM_GRAY}├─ {Colors.CYAN}"
-                else:
-                    # Subsequent fields with tree connector
-                    field_prefix = f"{Colors.DIM_GRAY}├─ {Colors.CYAN}"
+        if entry.fields:
+            # Handle legacy raw fields first
+            if "raw_fields" in entry.fields and len(entry.fields) == 1:
+                raw_content = str(entry.fields["raw_fields"]).strip()
+                if raw_content:
+                    field_lines = self.formatter.wrap_text(raw_content, self.layout.message_width - 4)  # Account for "├─ "
                     
-                field_formatted = f"{field_prefix}{field_str}{Colors.NC}"
-                field_lines = self.formatter.wrap_text(
-                    field_formatted, self.layout.message_width, "│  "  # Tree continuation for wrapped lines
-                )
-                
-                for field_line in field_lines:
-                    field_line = field_line.ljust(self.layout.message_width)
-                    empty_level = "".ljust(self.layout.level_width)
-                    empty_timestamp = "".ljust(self.layout.timestamp_width)
-                    print(
-                        f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_line} {Colors.NC}"
-                    )
+                    for k, field_line in enumerate(field_lines):
+                        if k == 0:
+                            field_formatted = f"{Colors.DIM_GRAY}├─ {Colors.CYAN}{field_line}{Colors.NC}"
+                        else:
+                            # Continuation lines with proper indentation
+                            field_formatted = f"   {Colors.CYAN}{field_line}{Colors.NC}"
+                        
+                        field_formatted = field_formatted.ljust(self.layout.message_width)
+                        empty_level = "".ljust(self.layout.level_width)
+                        empty_timestamp = "".ljust(self.layout.timestamp_width)
+                        print(
+                            f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_formatted} {Colors.DIM_GRAY}│{Colors.NC}"
+                        )
+            else:
+                # Handle regular key-value fields
+                for key, value in entry.fields.items():
+                    if key != "raw_fields" and value is not None:
+                        value_str = str(value).strip()
+                        if value_str:
+                            # Format key and value with colors, handle wrapping separately
+                            colored_key = f"{Colors.CYAN}{key}={Colors.NC}"
+                            
+                            # Calculate available width for the value
+                            available_width = self.layout.message_width - len(f"├─ {key}=")
+                            value_wrapped = self.formatter.wrap_text(value_str, available_width)
+                            
+                            for k, value_line in enumerate(value_wrapped):
+                                if k == 0:
+                                    # First line with tree connector and colored key
+                                    field_formatted = f"{Colors.DIM_GRAY}├─ {colored_key}{Colors.CYAN}{value_line}{Colors.NC}"
+                                else:
+                                    # Continuation lines with proper indentation (no vertical bar)
+                                    indent_spaces = " " * (len(f"├─ {key}="))
+                                    field_formatted = f"{indent_spaces}{Colors.CYAN}{value_line}{Colors.NC}"
+                                
+                                field_formatted = field_formatted.ljust(self.layout.message_width)
+                                empty_level = "".ljust(self.layout.level_width)
+                                empty_timestamp = "".ljust(self.layout.timestamp_width)
+                                print(
+                                    f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_formatted} {Colors.DIM_GRAY}│{Colors.NC}"
+                                )
 
 
 class LogFormatter:
@@ -758,7 +504,6 @@ class LogFormatter:
 
     def __init__(self, terminal_width: int = None):
         self.parser = LogParser()
-        self.analyzer = ContentAnalyzer()
         self.layout_calculator = TableLayoutCalculator(terminal_width)
         self.logger = logging.getLogger(__name__)
 
@@ -819,7 +564,7 @@ class LogFormatter:
                 # Initialize layout and renderer on first valid entry
                 if not header_printed:
                     # For streaming, assume 3-column layout initially
-                    layout = self.layout_calculator.calculate_layout(False)
+                    layout = self.layout_calculator.calculate_layout()
                     renderer = TableRenderer(layout)
                     renderer.render_header()
                     header_printed = True
@@ -847,8 +592,8 @@ class LogFormatter:
             return
 
         # Determine layout
-        has_fields_column = self.analyzer.should_show_fields_column(entries)
-        layout = self.layout_calculator.calculate_layout(has_fields_column)
+        # has_fields_column = self.analyzer.should_show_fields_column(entries) # Removed analyzer
+        layout = self.layout_calculator.calculate_layout() # Always 3-column for batch
 
         # Render table
         renderer = TableRenderer(layout)
