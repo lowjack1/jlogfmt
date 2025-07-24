@@ -424,30 +424,23 @@ class TextFormatter:
         return lines if lines else ["".ljust(width)]
 
     @staticmethod
-    def format_fields(fields: Dict[str, Any]) -> str:
-        """Format fields dictionary into a display string."""
+    def format_fields(fields: Dict[str, Any]) -> List[str]:
+        """Format fields dictionary into a list of display strings, one per field."""
         if not fields:
-            return ""
+            return []
 
-        # Handle legacy raw fields
         if "raw_fields" in fields and len(fields) == 1:
             raw_content = str(fields["raw_fields"]).strip()
-            return raw_content if raw_content else ""
+            return [raw_content] if raw_content else []
 
-        # Format as key=value pairs with better separation
-        parts = []
+        field_lines = []
         for key, value in fields.items():
             if key != "raw_fields" and value is not None:
                 value_str = str(value).strip()
                 if value_str:
-                    # Use a visually distinct format for key-value pairs
-                    parts.append(f"{key}={value_str}")
+                    field_lines.append(f"{key}={value_str}")
 
-        if not parts:
-            return ""
-            
-        # Join with a subtle separator for better readability
-        return " • ".join(parts)
+        return field_lines
 
     @staticmethod
     def format_timestamp(timestamp: str) -> str:
@@ -661,14 +654,19 @@ class TableRenderer:
         message_lines = self.formatter.wrap_text(
             entry.message, self.layout.message_width
         )
-        fields_text = self.formatter.format_fields(entry.fields)
-        fields_lines = (
-            self.formatter.wrap_text(fields_text, self.layout.fields_width)
-            if fields_text
-            else ["".ljust(self.layout.fields_width)]
-        )
+        field_strings = self.formatter.format_fields(entry.fields)
+        
+        # Create field lines by wrapping each field and combining them
+        all_field_lines = []
+        for field_str in field_strings:
+            wrapped_field_lines = self.formatter.wrap_text(field_str, self.layout.fields_width)
+            all_field_lines.extend(wrapped_field_lines)
+        
+        # Ensure we have at least one empty line for fields column
+        if not all_field_lines:
+            all_field_lines = ["".ljust(self.layout.fields_width)]
 
-        max_lines = max(len(message_lines), len(fields_lines))
+        max_lines = max(len(message_lines), len(all_field_lines))
 
         for i in range(max_lines):
             msg_part = (
@@ -677,8 +675,8 @@ class TableRenderer:
                 else "".ljust(self.layout.message_width)
             )
             field_part = (
-                fields_lines[i]
-                if i < len(fields_lines)
+                all_field_lines[i]
+                if i < len(all_field_lines)
                 else "".ljust(self.layout.fields_width)
             )
 
@@ -704,7 +702,7 @@ class TableRenderer:
 
         # Handle message and fields separately
         message = entry.message or ""
-        fields_text = self.formatter.format_fields(entry.fields)
+        field_strings = self.formatter.format_fields(entry.fields)
         
         # Wrap the main message
         message_lines = self.formatter.wrap_text(
@@ -730,21 +728,29 @@ class TableRenderer:
                     f"{Colors.DIM_GRAY}│{Colors.NC}{Colors.WHITE} {empty_level} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.NC}"
                 )
 
-        # Add fields on separate lines if they exist
-        if fields_text:
-            # Format fields with indentation and color
-            fields_formatted = f"{Colors.DIM_GRAY}└─ {Colors.CYAN}{fields_text}{Colors.NC}"
-            fields_lines = self.formatter.wrap_text(
-                fields_formatted, self.layout.message_width, "   "  # 3-space continuation indent
-            )
-            
-            for field_line in fields_lines:
-                field_line = field_line.ljust(self.layout.message_width)
-                empty_level = "".ljust(self.layout.level_width)
-                empty_timestamp = "".ljust(self.layout.timestamp_width)
-                print(
-                    f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_line} {Colors.NC}"
+        # Add each field on its own line if they exist
+        if field_strings:
+            for j, field_str in enumerate(field_strings):
+                # Format each field with indentation and color
+                if j == 0:
+                    # First field with tree connector
+                    field_prefix = f"{Colors.DIM_GRAY}├─ {Colors.CYAN}"
+                else:
+                    # Subsequent fields with tree connector
+                    field_prefix = f"{Colors.DIM_GRAY}├─ {Colors.CYAN}"
+                    
+                field_formatted = f"{field_prefix}{field_str}{Colors.NC}"
+                field_lines = self.formatter.wrap_text(
+                    field_formatted, self.layout.message_width, "│  "  # Tree continuation for wrapped lines
                 )
+                
+                for field_line in field_lines:
+                    field_line = field_line.ljust(self.layout.message_width)
+                    empty_level = "".ljust(self.layout.level_width)
+                    empty_timestamp = "".ljust(self.layout.timestamp_width)
+                    print(
+                        f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_line} {Colors.NC}"
+                    )
 
 
 class LogFormatter:
