@@ -431,15 +431,23 @@ class TextFormatter:
 
         # Handle legacy raw fields
         if "raw_fields" in fields and len(fields) == 1:
-            return str(fields["raw_fields"])
+            raw_content = str(fields["raw_fields"]).strip()
+            return raw_content if raw_content else ""
 
-        # Format as key=value pairs
+        # Format as key=value pairs with better separation
         parts = []
         for key, value in fields.items():
             if key != "raw_fields" and value is not None:
-                parts.append(f"{key}={value}")
+                value_str = str(value).strip()
+                if value_str:
+                    # Use a visually distinct format for key-value pairs
+                    parts.append(f"{key}={value_str}")
 
-        return " ".join(parts)
+        if not parts:
+            return ""
+            
+        # Join with a subtle separator for better readability
+        return " • ".join(parts)
 
     @staticmethod
     def format_timestamp(timestamp: str) -> str:
@@ -690,24 +698,20 @@ class TableRenderer:
                 )
 
     def _render_three_column_entry(self, entry: LogEntry) -> None:
-        """Render entry in 3-column format with merged message and fields."""
+        """Render entry in 3-column format with fields on separate lines."""
         level_color = LogLevelMapper.get_color(entry.level)
         timestamp = self.formatter.format_timestamp(entry.timestamp)
 
-        # Merge message and fields for 3-column layout
-        message_parts = []
-        if entry.message:
-            message_parts.append(entry.message)
-
+        # Handle message and fields separately
+        message = entry.message or ""
         fields_text = self.formatter.format_fields(entry.fields)
-        if fields_text:
-            message_parts.append(fields_text)
-
-        merged_message = " | ".join(message_parts) if message_parts else ""
+        
+        # Wrap the main message
         message_lines = self.formatter.wrap_text(
-            merged_message, self.layout.message_width
-        )
+            message, self.layout.message_width
+        ) if message else [""]
 
+        # Render the main message lines first
         for i, msg_part in enumerate(message_lines):
             msg_part = msg_part.ljust(self.layout.message_width)
 
@@ -719,11 +723,27 @@ class TableRenderer:
                     f"{Colors.DIM_GRAY}│{Colors.NC}{level_color}{Colors.BOLD} {level_padded} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {timestamp_padded} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.NC}"
                 )
             else:
-                # Continuation lines
+                # Continuation lines for message
                 empty_level = "".ljust(self.layout.level_width)
                 empty_timestamp = "".ljust(self.layout.timestamp_width)
                 print(
                     f"{Colors.DIM_GRAY}│{Colors.NC}{Colors.WHITE} {empty_level} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.NC}"
+                )
+
+        # Add fields on separate lines if they exist
+        if fields_text:
+            # Format fields with indentation and color
+            fields_formatted = f"{Colors.DIM_GRAY}└─ {Colors.CYAN}{fields_text}{Colors.NC}"
+            fields_lines = self.formatter.wrap_text(
+                fields_formatted, self.layout.message_width, "   "  # 3-space continuation indent
+            )
+            
+            for field_line in fields_lines:
+                field_line = field_line.ljust(self.layout.message_width)
+                empty_level = "".ljust(self.layout.level_width)
+                empty_timestamp = "".ljust(self.layout.timestamp_width)
+                print(
+                    f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_line} {Colors.NC}"
                 )
 
 
@@ -741,25 +761,92 @@ class LogFormatter:
         input_stream = input_stream or sys.stdin
 
         try:
-            # Parse all log entries
-            entries = self._parse_all_entries(input_stream)
-            if not entries:
-                self.logger.warning("No valid log entries found")
-                return
-
-            # Determine layout
-            has_fields_column = self.analyzer.should_show_fields_column(entries)
-            layout = self.layout_calculator.calculate_layout(has_fields_column)
-
-            # Render table
-            renderer = TableRenderer(layout)
-            self._render_table(renderer, entries)
+            # Check if this is a streaming mode (like from journalctl -f)
+            # by trying to read with a small timeout
+            is_streaming = self._is_streaming_input(input_stream)
+            
+            if is_streaming:
+                self._format_streaming_logs(input_stream)
+            else:
+                self._format_batch_logs(input_stream)
 
         except KeyboardInterrupt:
             self.logger.info("Formatting interrupted by user")
         except Exception as e:
             self.logger.error(f"Error formatting logs: {e}")
             raise
+
+    def _is_streaming_input(self, input_stream) -> bool:
+        """Detect if input is streaming (like from journalctl -f)."""
+        # Check if we're running with the -f flag (passed through environment or args)
+        import os
+        
+        # Check if parent process contains journalctl with -f
+        try:
+            import psutil
+            parent = psutil.Process().parent()
+            if parent and 'journalctl' in parent.name() and '-f' in ' '.join(parent.cmdline()):
+                return True
+        except:
+            pass
+        
+        # Check environment variable that can be set by the calling script
+        if os.environ.get('JLOGFMT_STREAMING', '').lower() == 'true':
+            return True
+            
+        # Fallback: if stdin is not a tty and we have piped input, assume streaming for safety
+        return not input_stream.isatty()
+
+    def _format_streaming_logs(self, input_stream) -> None:
+        """Format logs in streaming mode - process line by line."""
+        header_printed = False
+        layout = None
+        renderer = None
+        entry_count = 0
+
+        for line in input_stream:
+            try:
+                entry = self.parser.parse_line(line)
+                if not entry:
+                    continue
+
+                # Initialize layout and renderer on first valid entry
+                if not header_printed:
+                    # For streaming, assume 3-column layout initially
+                    layout = self.layout_calculator.calculate_layout(False)
+                    renderer = TableRenderer(layout)
+                    renderer.render_header()
+                    header_printed = True
+
+                # Add separator between entries (except for first)
+                if entry_count > 0:
+                    renderer.render_separator()
+                
+                renderer.render_entry(entry, entry_count == 0)
+                entry_count += 1
+                
+                # Flush output for real-time display
+                sys.stdout.flush()
+
+            except Exception as e:
+                self.logger.debug(f"Failed to parse line: {e}")
+                continue
+
+    def _format_batch_logs(self, input_stream) -> None:
+        """Format logs in batch mode - original behavior."""
+        # Parse all log entries
+        entries = self._parse_all_entries(input_stream)
+        if not entries:
+            self.logger.warning("No valid log entries found")
+            return
+
+        # Determine layout
+        has_fields_column = self.analyzer.should_show_fields_column(entries)
+        layout = self.layout_calculator.calculate_layout(has_fields_column)
+
+        # Render table
+        renderer = TableRenderer(layout)
+        self._render_table(renderer, entries)
 
     def _parse_all_entries(self, input_stream) -> List[LogEntry]:
         """Parse all log entries from input stream."""

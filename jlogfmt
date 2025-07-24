@@ -113,7 +113,17 @@ echo ""
 
 # Execute and format
 if [ "$ERRORS_ONLY" = true ]; then
-    eval $JOURNAL_CMD | grep -E "(ERROR|WARNING)" | format_logs
+    if [ "$FOLLOW" = true ]; then
+        export JLOGFMT_STREAMING=true
+        eval $JOURNAL_CMD | grep -E "(ERROR|WARNING)" | format_logs
+    else
+        eval $JOURNAL_CMD | grep -E "(ERROR|WARNING)" | format_logs
+    fi
 else
-    eval $JOURNAL_CMD | format_logs
+    if [ "$FOLLOW" = true ]; then
+        export JLOGFMT_STREAMING=true
+        eval $JOURNAL_CMD | format_logs
+    else
+        eval $JOURNAL_CMD | format_logs
+    fi
 fi 
