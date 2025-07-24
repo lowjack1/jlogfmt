@@ -77,13 +77,11 @@ class LogEntry:
 
 @dataclass
 class TableLayout:
-    """Table layout configuration."""
+    """Table layout configuration for 3-column display."""
 
     level_width: int
     timestamp_width: int
     message_width: int
-    fields_width: int
-    has_fields_column: bool
     terminal_width: int
 
 
@@ -252,7 +250,6 @@ class TableLayoutCalculator:
     LEVEL_WIDTH = 8
     TIMESTAMP_WIDTH = 19
     MIN_MESSAGE_WIDTH = 25
-    MIN_FIELDS_WIDTH = 20
 
     def __init__(self, terminal_width: int = None):
         self.terminal_width = terminal_width or self._get_terminal_width()
@@ -264,64 +261,8 @@ class TableLayoutCalculator:
         except (OSError, ValueError):
             return 120  # Fallback width
 
-    def calculate_layout(self, has_fields_column: bool) -> TableLayout:
-        """Calculate optimal column widths."""
-        if has_fields_column:
-            return self._calculate_four_column_layout()
-        else:
-            return self._calculate_three_column_layout()
-
-    def _calculate_four_column_layout(self) -> TableLayout:
-        """Calculate layout for LEVEL | TIMESTAMP | MESSAGE | FIELDS."""
-        # Border overhead: 4 separators + 8 spaces
-        border_overhead = 12
-        available_width = (
-            self.terminal_width
-            - self.LEVEL_WIDTH
-            - self.TIMESTAMP_WIDTH
-            - border_overhead
-        )
-
-        # Split remaining space: 45% message, 55% fields
-        message_width = max(self.MIN_MESSAGE_WIDTH, int(available_width * 0.45))
-        fields_width = available_width - message_width
-
-        # Ensure minimum widths
-        if fields_width < self.MIN_FIELDS_WIDTH:
-            fields_width = self.MIN_FIELDS_WIDTH
-            message_width = available_width - fields_width
-
-        if message_width < self.MIN_MESSAGE_WIDTH:
-            message_width = self.MIN_MESSAGE_WIDTH
-            fields_width = available_width - message_width
-
-        # Final adjustment to prevent overflow
-        actual_total = (
-            self.LEVEL_WIDTH
-            + self.TIMESTAMP_WIDTH
-            + message_width
-            + fields_width
-            + border_overhead
-        )
-        if actual_total > self.terminal_width:
-            excess = actual_total - self.terminal_width
-            if fields_width > message_width:
-                fields_width = max(self.MIN_FIELDS_WIDTH, fields_width - excess)
-            else:
-                message_width = max(self.MIN_MESSAGE_WIDTH, message_width - excess)
-
-        return TableLayout(
-            level_width=self.LEVEL_WIDTH,
-            timestamp_width=self.TIMESTAMP_WIDTH,
-            message_width=message_width,
-            fields_width=fields_width,
-            has_fields_column=True,
-            terminal_width=self.terminal_width,
-        )
-
-    def _calculate_three_column_layout(self) -> TableLayout:
-        """Calculate layout for LEVEL | TIMESTAMP | MESSAGE."""
-        # Border overhead: 3 separators + 6 spaces
+    def calculate_layout(self) -> TableLayout:
+        """Calculate optimal column widths for 3-column layout."""
         border_overhead = 9
         available_width = (
             self.terminal_width
@@ -329,71 +270,16 @@ class TableLayoutCalculator:
             - self.TIMESTAMP_WIDTH
             - border_overhead
         )
+        
+        # Now that we don't have a right border, use all available width for message
+        # Still set a reasonable minimum
         message_width = max(30, available_width)
-
-        # Prevent overflow
-        actual_total = (
-            self.LEVEL_WIDTH + self.TIMESTAMP_WIDTH + message_width + border_overhead
-        )
-        if actual_total > self.terminal_width:
-            excess = actual_total - self.terminal_width
-            message_width = max(30, message_width - excess)
 
         return TableLayout(
             level_width=self.LEVEL_WIDTH,
             timestamp_width=self.TIMESTAMP_WIDTH,
             message_width=message_width,
-            fields_width=0,
-            has_fields_column=False,
             terminal_width=self.terminal_width,
-        )
-
-
-class ContentAnalyzer:
-    """Analyzes log content to determine optimal display layout."""
-
-    def __init__(self):
-        self.substantial_fields_threshold = 0.25
-        self.min_substantial_logs = 2
-
-    def should_show_fields_column(self, entries: List[LogEntry]) -> bool:
-        """Determine if a separate fields column should be shown."""
-        if not entries:
-            return False
-
-        substantial_count = sum(
-            1 for entry in entries if self._has_substantial_fields(entry)
-        )
-        substantial_ratio = substantial_count / len(entries)
-
-        return (
-            substantial_count >= self.min_substantial_logs
-            and substantial_ratio >= self.substantial_fields_threshold
-        )
-
-    def _has_substantial_fields(self, entry: LogEntry) -> bool:
-        """Check if log entry has substantial field data."""
-        if not entry.fields:
-            return False
-
-        # Filter out empty or standard fields
-        meaningful_fields = {
-            k: v
-            for k, v in entry.fields.items()
-            if v and k not in ["raw_fields"] and str(v).strip()
-        }
-
-        if not meaningful_fields:
-            return False
-
-        # Check for legacy format with substantial raw fields
-        if "raw_fields" in entry.fields:
-            raw_fields = str(entry.fields["raw_fields"]).strip()
-            return len(raw_fields) > 10
-
-        # Check for multiple fields or complex values
-        return len(meaningful_fields) >= 2 or any(
-            len(str(v)) > 20 for v in meaningful_fields.values()
         )
 
 
@@ -413,41 +299,17 @@ class TextFormatter:
         for word in words:
             test_line = current_line + (" " if current_line.strip() else "") + word
             if len(test_line) > width and current_line.strip():
+                # Pad the line to exactly the specified width
                 lines.append(current_line.ljust(width))
                 current_line = continuation_prefix + word
             else:
                 current_line = test_line
 
         if current_line.strip():
+            # Pad the final line to exactly the specified width
             lines.append(current_line.ljust(width))
 
         return lines if lines else ["".ljust(width)]
-
-    @staticmethod
-    def format_fields(fields: Dict[str, Any]) -> str:
-        """Format fields dictionary into a display string."""
-        if not fields:
-            return ""
-
-        # Handle legacy raw fields
-        if "raw_fields" in fields and len(fields) == 1:
-            raw_content = str(fields["raw_fields"]).strip()
-            return raw_content if raw_content else ""
-
-        # Format as key=value pairs with better separation
-        parts = []
-        for key, value in fields.items():
-            if key != "raw_fields" and value is not None:
-                value_str = str(value).strip()
-                if value_str:
-                    # Use a visually distinct format for key-value pairs
-                    parts.append(f"{key}={value_str}")
-
-        if not parts:
-            return ""
-            
-        # Join with a subtle separator for better readability
-        return " • ".join(parts)
 
     @staticmethod
     def format_timestamp(timestamp: str) -> str:
@@ -480,71 +342,6 @@ class TableRenderer:
 
     def render_header(self) -> None:
         """Render table header."""
-        if self.layout.has_fields_column:
-            self._render_four_column_header()
-        else:
-            self._render_three_column_header()
-
-    def render_footer(self) -> None:
-        """Render table footer."""
-        if self.layout.has_fields_column:
-            self._render_four_column_footer()
-        else:
-            self._render_three_column_footer()
-
-    def render_separator(self) -> None:
-        """Render row separator."""
-        if self.layout.has_fields_column:
-            self._render_four_column_separator()
-        else:
-            self._render_three_column_separator()
-
-    def render_entry(self, entry: LogEntry, is_first: bool = True) -> None:
-        """Render a single log entry."""
-        if self.layout.has_fields_column:
-            self._render_four_column_entry(entry)
-        else:
-            self._render_three_column_entry(entry)
-
-    def _render_four_column_header(self) -> None:
-        """Render 4-column header: LEVEL | TIMESTAMP | MESSAGE | FIELDS."""
-        l, t, m, f = (
-            self.layout.level_width,
-            self.layout.timestamp_width,
-            self.layout.message_width,
-            self.layout.fields_width,
-        )
-
-        border = (
-            f"{Colors.DIM_GRAY}┌"
-            + "─" * (l + 2)
-            + "┬"
-            + "─" * (t + 2)
-            + "┬"
-            + "─" * (m + 2)
-            + "┬"
-            + "─" * (f + 2)
-            + f"{Colors.NC}"
-        )
-        header = f'{Colors.DIM_GRAY}│{Colors.NC} {"LEVEL".ljust(l)} {Colors.DIM_GRAY}│{Colors.NC} {"TIMESTAMP".ljust(t)} {Colors.DIM_GRAY}│{Colors.NC} {"MESSAGE".ljust(m)} {Colors.DIM_GRAY}│{Colors.NC} {"FIELDS".ljust(f)} {Colors.NC}'
-        separator = (
-            f"{Colors.DIM_GRAY}├"
-            + "─" * (l + 2)
-            + "┼"
-            + "─" * (t + 2)
-            + "┼"
-            + "─" * (m + 2)
-            + "┼"
-            + "─" * (f + 2)
-            + f"{Colors.NC}"
-        )
-
-        print(border)
-        print(header)
-        print(separator)
-
-    def _render_three_column_header(self) -> None:
-        """Render 3-column header: LEVEL | TIMESTAMP | MESSAGE."""
         l, t, m = (
             self.layout.level_width,
             self.layout.timestamp_width,
@@ -575,29 +372,8 @@ class TableRenderer:
         print(header)
         print(separator)
 
-    def _render_four_column_footer(self) -> None:
-        """Render 4-column footer."""
-        l, t, m, f = (
-            self.layout.level_width,
-            self.layout.timestamp_width,
-            self.layout.message_width,
-            self.layout.fields_width,
-        )
-        footer = (
-            f"{Colors.DIM_GRAY}└"
-            + "─" * (l + 2)
-            + "┴"
-            + "─" * (t + 2)
-            + "┴"
-            + "─" * (m + 2)
-            + "┴"
-            + "─" * (f + 2)
-            + f"{Colors.NC}"
-        )
-        print(footer)
-
-    def _render_three_column_footer(self) -> None:
-        """Render 3-column footer."""
+    def render_footer(self) -> None:
+        """Render table footer."""
         l, t, m = (
             self.layout.level_width,
             self.layout.timestamp_width,
@@ -614,29 +390,8 @@ class TableRenderer:
         )
         print(footer)
 
-    def _render_four_column_separator(self) -> None:
-        """Render 4-column row separator."""
-        l, t, m, f = (
-            self.layout.level_width,
-            self.layout.timestamp_width,
-            self.layout.message_width,
-            self.layout.fields_width,
-        )
-        separator = (
-            f"{Colors.DIM_GRAY}├"
-            + "─" * (l + 2)
-            + "┼"
-            + "─" * (t + 2)
-            + "┼"
-            + "─" * (m + 2)
-            + "┼"
-            + "─" * (f + 2)
-            + f"{Colors.NC}"
-        )
-        print(separator)
-
-    def _render_three_column_separator(self) -> None:
-        """Render 3-column row separator."""
+    def render_separator(self) -> None:
+        """Render row separator."""
         l, t, m = (
             self.layout.level_width,
             self.layout.timestamp_width,
@@ -653,58 +408,13 @@ class TableRenderer:
         )
         print(separator)
 
-    def _render_four_column_entry(self, entry: LogEntry) -> None:
-        """Render entry in 4-column format."""
-        level_color = LogLevelMapper.get_color(entry.level)
-        timestamp = self.formatter.format_timestamp(entry.timestamp)
-
-        message_lines = self.formatter.wrap_text(
-            entry.message, self.layout.message_width
-        )
-        fields_text = self.formatter.format_fields(entry.fields)
-        fields_lines = (
-            self.formatter.wrap_text(fields_text, self.layout.fields_width)
-            if fields_text
-            else ["".ljust(self.layout.fields_width)]
-        )
-
-        max_lines = max(len(message_lines), len(fields_lines))
-
-        for i in range(max_lines):
-            msg_part = (
-                message_lines[i]
-                if i < len(message_lines)
-                else "".ljust(self.layout.message_width)
-            )
-            field_part = (
-                fields_lines[i]
-                if i < len(fields_lines)
-                else "".ljust(self.layout.fields_width)
-            )
-
-            if i == 0:
-                # First line with level and timestamp
-                level_padded = entry.level.ljust(self.layout.level_width)
-                timestamp_padded = timestamp.ljust(self.layout.timestamp_width)
-                print(
-                    f"{Colors.DIM_GRAY}│{Colors.NC}{level_color}{Colors.BOLD} {level_padded} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {timestamp_padded} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.DIM_GRAY}│{Colors.NC} {field_part} {Colors.NC}"
-                )
-            else:
-                # Continuation lines
-                empty_level = "".ljust(self.layout.level_width)
-                empty_timestamp = "".ljust(self.layout.timestamp_width)
-                print(
-                    f"{Colors.DIM_GRAY}│{Colors.NC}{Colors.WHITE} {empty_level} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.DIM_GRAY}│{Colors.NC} {field_part} {Colors.NC}"
-                )
-
-    def _render_three_column_entry(self, entry: LogEntry) -> None:
-        """Render entry in 3-column format with fields on separate lines."""
+    def render_entry(self, entry: LogEntry, is_first: bool = True) -> None:
+        """Render a single log entry in 3-column format with fields on separate lines."""
         level_color = LogLevelMapper.get_color(entry.level)
         timestamp = self.formatter.format_timestamp(entry.timestamp)
 
         # Handle message and fields separately
         message = entry.message or ""
-        fields_text = self.formatter.format_fields(entry.fields)
         
         # Wrap the main message
         message_lines = self.formatter.wrap_text(
@@ -713,6 +423,7 @@ class TableRenderer:
 
         # Render the main message lines first
         for i, msg_part in enumerate(message_lines):
+            # Ensure proper column width padding - text must fit exactly in the column
             msg_part = msg_part.ljust(self.layout.message_width)
 
             if i == 0:
@@ -730,21 +441,62 @@ class TableRenderer:
                     f"{Colors.DIM_GRAY}│{Colors.NC}{Colors.WHITE} {empty_level} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.NC}"
                 )
 
-        # Add fields on separate lines if they exist
-        if fields_text:
-            # Format fields with indentation and color
-            fields_formatted = f"{Colors.DIM_GRAY}└─ {Colors.CYAN}{fields_text}{Colors.NC}"
-            fields_lines = self.formatter.wrap_text(
-                fields_formatted, self.layout.message_width, "   "  # 3-space continuation indent
-            )
-            
-            for field_line in fields_lines:
-                field_line = field_line.ljust(self.layout.message_width)
-                empty_level = "".ljust(self.layout.level_width)
-                empty_timestamp = "".ljust(self.layout.timestamp_width)
-                print(
-                    f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_line} {Colors.NC}"
-                )
+        # Add each field on its own line if they exist
+        if entry.fields:
+            # Handle legacy raw fields first
+            if "raw_fields" in entry.fields and len(entry.fields) == 1:
+                raw_content = str(entry.fields["raw_fields"]).strip()
+                if raw_content:
+                    # Indent field content by 2 spaces from message column
+                    field_lines = self.formatter.wrap_text(raw_content, self.layout.message_width - 6)  # Account for "  ├─ "
+                    
+                    for k, field_line in enumerate(field_lines):
+                        if k == 0:
+                            field_formatted = f"  {Colors.DIM_GRAY}├─ {Colors.CYAN}{field_line}{Colors.NC}"
+                        else:
+                            # Continuation lines with proper indentation
+                            field_formatted = f"     {Colors.CYAN}{field_line}{Colors.NC}"
+                        
+                        # Pad to exact message column width
+                        field_formatted = field_formatted.ljust(self.layout.message_width)
+                        
+                        # Print with proper table borders
+                        empty_level = "".ljust(self.layout.level_width)
+                        empty_timestamp = "".ljust(self.layout.timestamp_width)
+                        print(
+                            f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_formatted} {Colors.NC}"
+                        )
+            else:
+                # Handle regular key-value fields
+                for key, value in entry.fields.items():
+                    if key != "raw_fields" and value is not None:
+                        value_str = str(value).strip()
+                        if value_str:
+                            # Format key and value with colors, handle wrapping separately
+                            colored_key = f"{Colors.CYAN}{key}={Colors.NC}"
+                            
+                            # Calculate available width for the value (indent by 2 spaces from message column)
+                            available_width = self.layout.message_width - len(f"  ├─ {key}=")
+                            value_wrapped = self.formatter.wrap_text(value_str, available_width)
+                            
+                            for k, value_line in enumerate(value_wrapped):
+                                if k == 0:
+                                    # First line with tree connector and colored key (indented by 2 spaces)
+                                    field_formatted = f"  {Colors.DIM_GRAY}├─ {colored_key}{Colors.CYAN}{value_line}{Colors.NC}"
+                                else:
+                                    # Continuation lines with proper indentation (no vertical bar)
+                                    indent_spaces = " " * (len(f"  ├─ {key}="))
+                                    field_formatted = f"{indent_spaces}{Colors.CYAN}{value_line}{Colors.NC}"
+                                
+                                # Pad to exact message column width
+                                field_formatted = field_formatted.ljust(self.layout.message_width)
+                                
+                                # Print with proper table borders
+                                empty_level = "".ljust(self.layout.level_width)
+                                empty_timestamp = "".ljust(self.layout.timestamp_width)
+                                print(
+                                    f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_formatted} {Colors.NC}"
+                                )
 
 
 class LogFormatter:
@@ -752,9 +504,26 @@ class LogFormatter:
 
     def __init__(self, terminal_width: int = None):
         self.parser = LogParser()
-        self.analyzer = ContentAnalyzer()
         self.layout_calculator = TableLayoutCalculator(terminal_width)
         self.logger = logging.getLogger(__name__)
+        self.current_layout = None
+        self.last_terminal_width = None
+
+    def _get_current_layout(self) -> TableLayout:
+        """Get current layout, recalculating if terminal size changed."""
+        try:
+            current_width = os.get_terminal_size().columns
+        except (OSError, ValueError):
+            current_width = 120  # Fallback
+        
+        # Recalculate layout if terminal width changed or not yet calculated
+        if (self.current_layout is None or 
+            self.last_terminal_width != current_width):
+            self.layout_calculator.terminal_width = current_width
+            self.current_layout = self.layout_calculator.calculate_layout()
+            self.last_terminal_width = current_width
+            
+        return self.current_layout
 
     def format_logs(self, input_stream=None) -> None:
         """Format logs from input stream and render to stdout."""
@@ -803,6 +572,7 @@ class LogFormatter:
         layout = None
         renderer = None
         entry_count = 0
+        check_counter = 0
 
         for line in input_stream:
             try:
@@ -810,15 +580,29 @@ class LogFormatter:
                 if not entry:
                     continue
 
-                # Initialize layout and renderer on first valid entry
-                if not header_printed:
-                    # For streaming, assume 3-column layout initially
-                    layout = self.layout_calculator.calculate_layout(False)
+                # Check for terminal size changes every 10 entries to avoid excessive checks
+                check_counter += 1
+                current_layout = self._get_current_layout()
+                
+                # Reinitialize if layout changed or first time
+                if (not header_printed or 
+                    layout is None or
+                    (check_counter % 10 == 0 and 
+                     layout.terminal_width != current_layout.terminal_width)):
+                    
+                    if header_printed and layout.terminal_width != current_layout.terminal_width:
+                        # Terminal was resized, print a separator
+                        print("\n" + "─" * current_layout.terminal_width)
+                        print(f"Terminal resized to {current_layout.terminal_width} columns")
+                        print("─" * current_layout.terminal_width + "\n")
+                    
+                    layout = current_layout
                     renderer = TableRenderer(layout)
                     renderer.render_header()
                     header_printed = True
+                    entry_count = 0  # Reset entry count for new table
 
-                # Add separator between entries (except for first)
+                # Add separator between entries (except for first in current table)
                 if entry_count > 0:
                     renderer.render_separator()
                 
@@ -841,8 +625,8 @@ class LogFormatter:
             return
 
         # Determine layout
-        has_fields_column = self.analyzer.should_show_fields_column(entries)
-        layout = self.layout_calculator.calculate_layout(has_fields_column)
+        # has_fields_column = self.analyzer.should_show_fields_column(entries) # Removed analyzer
+        layout = self._get_current_layout() # Always 3-column for batch
 
         # Render table
         renderer = TableRenderer(layout)
