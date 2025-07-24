@@ -363,10 +363,9 @@ class TableRenderer:
             + "─" * (t + 2)
             + "┬"
             + "─" * (m + 2)
-            + "┐"
             + f"{Colors.NC}"
         )
-        header = f'{Colors.DIM_GRAY}│{Colors.NC} {"LEVEL".ljust(l)} {Colors.DIM_GRAY}│{Colors.NC} {"TIMESTAMP".ljust(t)} {Colors.DIM_GRAY}│{Colors.NC} {"MESSAGE".ljust(m)} {Colors.DIM_GRAY}│{Colors.NC}'
+        header = f'{Colors.DIM_GRAY}│{Colors.NC} {"LEVEL".ljust(l)} {Colors.DIM_GRAY}│{Colors.NC} {"TIMESTAMP".ljust(t)} {Colors.DIM_GRAY}│{Colors.NC} {"MESSAGE".ljust(m)} {Colors.NC}'
         separator = (
             f"{Colors.DIM_GRAY}├"
             + "─" * (l + 2)
@@ -374,7 +373,6 @@ class TableRenderer:
             + "─" * (t + 2)
             + "┼"
             + "─" * (m + 2)
-            + "┤"
             + f"{Colors.NC}"
         )
 
@@ -396,7 +394,6 @@ class TableRenderer:
             + "─" * (t + 2)
             + "┴"
             + "─" * (m + 2)
-            + "┘"
             + f"{Colors.NC}"
         )
         print(footer)
@@ -415,7 +412,6 @@ class TableRenderer:
             + "─" * (t + 2)
             + "┼"
             + "─" * (m + 2)
-            + "┤"
             + f"{Colors.NC}"
         )
         print(separator)
@@ -443,14 +439,14 @@ class TableRenderer:
                 level_padded = entry.level.ljust(self.layout.level_width)
                 timestamp_padded = timestamp.ljust(self.layout.timestamp_width)
                 print(
-                    f"{Colors.DIM_GRAY}│{Colors.NC}{level_color}{Colors.BOLD} {level_padded} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {timestamp_padded} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.DIM_GRAY}│{Colors.NC}"
+                    f"{Colors.DIM_GRAY}│{Colors.NC}{level_color}{Colors.BOLD} {level_padded} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {timestamp_padded} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.NC}"
                 )
             else:
                 # Continuation lines for message
                 empty_level = "".ljust(self.layout.level_width)
                 empty_timestamp = "".ljust(self.layout.timestamp_width)
                 print(
-                    f"{Colors.DIM_GRAY}│{Colors.NC}{Colors.WHITE} {empty_level} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.DIM_GRAY}│{Colors.NC}"
+                    f"{Colors.DIM_GRAY}│{Colors.NC}{Colors.WHITE} {empty_level} {Colors.NC}{Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {msg_part} {Colors.NC}"
                 )
 
         # Add each field on its own line if they exist
