@@ -263,15 +263,19 @@ class TableLayoutCalculator:
 
     def calculate_layout(self) -> TableLayout:
         """Calculate optimal column widths for 3-column layout."""
-        # Border overhead: 3 separators + 6 spaces
-        border_overhead = 9
+        # Border overhead: 3 separators + 6 spaces + 2 buffer for terminal wrapping
+        border_overhead = 11
         available_width = (
             self.terminal_width
             - self.LEVEL_WIDTH
             - self.TIMESTAMP_WIDTH
             - border_overhead
         )
-        message_width = max(30, available_width)
+        
+        # Set reasonable bounds for message width
+        # Min: 30 characters, Max: 120 characters (or 70% of available width, whichever is smaller)
+        max_message_width = min(120, int(available_width * 0.7))
+        message_width = max(30, min(max_message_width, available_width))
 
         # Prevent overflow
         actual_total = (
@@ -305,15 +309,15 @@ class TextFormatter:
         for word in words:
             test_line = current_line + (" " if current_line.strip() else "") + word
             if len(test_line) > width and current_line.strip():
-                lines.append(current_line.ljust(width))
+                lines.append(current_line)
                 current_line = continuation_prefix + word
             else:
                 current_line = test_line
 
         if current_line.strip():
-            lines.append(current_line.ljust(width))
+            lines.append(current_line)
 
-        return lines if lines else ["".ljust(width)]
+        return lines if lines else [""]
 
     @staticmethod
     def format_timestamp(timestamp: str) -> str:
@@ -431,6 +435,7 @@ class TableRenderer:
 
         # Render the main message lines first
         for i, msg_part in enumerate(message_lines):
+            # Ensure proper column width padding
             msg_part = msg_part.ljust(self.layout.message_width)
 
             if i == 0:
@@ -463,12 +468,10 @@ class TableRenderer:
                             # Continuation lines with proper indentation
                             field_formatted = f"   {Colors.CYAN}{field_line}{Colors.NC}"
                         
-                        field_formatted = field_formatted.ljust(self.layout.message_width)
-                        empty_level = "".ljust(self.layout.level_width)
-                        empty_timestamp = "".ljust(self.layout.timestamp_width)
-                        print(
-                            f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_formatted} {Colors.DIM_GRAY}│{Colors.NC}"
-                        )
+                        # Print field without table borders - just with proper spacing
+                        empty_level_space = " " * (self.layout.level_width + 3)  # level width + "│ "
+                        empty_timestamp_space = " " * (self.layout.timestamp_width + 3)  # timestamp width + "│ "
+                        print(f"{empty_level_space}{empty_timestamp_space}{field_formatted}")
             else:
                 # Handle regular key-value fields
                 for key, value in entry.fields.items():
@@ -491,12 +494,10 @@ class TableRenderer:
                                     indent_spaces = " " * (len(f"├─ {key}="))
                                     field_formatted = f"{indent_spaces}{Colors.CYAN}{value_line}{Colors.NC}"
                                 
-                                field_formatted = field_formatted.ljust(self.layout.message_width)
-                                empty_level = "".ljust(self.layout.level_width)
-                                empty_timestamp = "".ljust(self.layout.timestamp_width)
-                                print(
-                                    f"{Colors.DIM_GRAY}│{Colors.NC} {empty_level} {Colors.DIM_GRAY}│{Colors.NC} {empty_timestamp} {Colors.DIM_GRAY}│{Colors.NC} {field_formatted} {Colors.DIM_GRAY}│{Colors.NC}"
-                                )
+                                # Print field without table borders - just with proper spacing
+                                empty_level_space = " " * (self.layout.level_width + 3)  # level width + "│ "
+                                empty_timestamp_space = " " * (self.layout.timestamp_width + 3)  # timestamp width + "│ "
+                                print(f"{empty_level_space}{empty_timestamp_space}{field_formatted}")
 
 
 class LogFormatter:
