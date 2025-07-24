@@ -263,8 +263,7 @@ class TableLayoutCalculator:
 
     def calculate_layout(self) -> TableLayout:
         """Calculate optimal column widths for 3-column layout."""
-        # Border overhead: 2 left separators + 4 spaces (no right border now)
-        border_overhead = 6
+        border_overhead = 9
         available_width = (
             self.terminal_width
             - self.LEVEL_WIDTH
@@ -300,15 +299,17 @@ class TextFormatter:
         for word in words:
             test_line = current_line + (" " if current_line.strip() else "") + word
             if len(test_line) > width and current_line.strip():
-                lines.append(current_line)
+                # Pad the line to exactly the specified width
+                lines.append(current_line.ljust(width))
                 current_line = continuation_prefix + word
             else:
                 current_line = test_line
 
         if current_line.strip():
-            lines.append(current_line)
+            # Pad the final line to exactly the specified width
+            lines.append(current_line.ljust(width))
 
-        return lines if lines else [""]
+        return lines if lines else ["".ljust(width)]
 
     @staticmethod
     def format_timestamp(timestamp: str) -> str:
@@ -422,7 +423,7 @@ class TableRenderer:
 
         # Render the main message lines first
         for i, msg_part in enumerate(message_lines):
-            # Ensure proper column width padding
+            # Ensure proper column width padding - text must fit exactly in the column
             msg_part = msg_part.ljust(self.layout.message_width)
 
             if i == 0:
@@ -494,6 +495,24 @@ class LogFormatter:
         self.parser = LogParser()
         self.layout_calculator = TableLayoutCalculator(terminal_width)
         self.logger = logging.getLogger(__name__)
+        self.current_layout = None
+        self.last_terminal_width = None
+
+    def _get_current_layout(self) -> TableLayout:
+        """Get current layout, recalculating if terminal size changed."""
+        try:
+            current_width = os.get_terminal_size().columns
+        except (OSError, ValueError):
+            current_width = 120  # Fallback
+        
+        # Recalculate layout if terminal width changed or not yet calculated
+        if (self.current_layout is None or 
+            self.last_terminal_width != current_width):
+            self.layout_calculator.terminal_width = current_width
+            self.current_layout = self.layout_calculator.calculate_layout()
+            self.last_terminal_width = current_width
+            
+        return self.current_layout
 
     def format_logs(self, input_stream=None) -> None:
         """Format logs from input stream and render to stdout."""
@@ -542,6 +561,7 @@ class LogFormatter:
         layout = None
         renderer = None
         entry_count = 0
+        check_counter = 0
 
         for line in input_stream:
             try:
@@ -549,15 +569,29 @@ class LogFormatter:
                 if not entry:
                     continue
 
-                # Initialize layout and renderer on first valid entry
-                if not header_printed:
-                    # For streaming, assume 3-column layout initially
-                    layout = self.layout_calculator.calculate_layout()
+                # Check for terminal size changes every 10 entries to avoid excessive checks
+                check_counter += 1
+                current_layout = self._get_current_layout()
+                
+                # Reinitialize if layout changed or first time
+                if (not header_printed or 
+                    layout is None or
+                    (check_counter % 10 == 0 and 
+                     layout.terminal_width != current_layout.terminal_width)):
+                    
+                    if header_printed and layout.terminal_width != current_layout.terminal_width:
+                        # Terminal was resized, print a separator
+                        print("\n" + "─" * current_layout.terminal_width)
+                        print(f"Terminal resized to {current_layout.terminal_width} columns")
+                        print("─" * current_layout.terminal_width + "\n")
+                    
+                    layout = current_layout
                     renderer = TableRenderer(layout)
                     renderer.render_header()
                     header_printed = True
+                    entry_count = 0  # Reset entry count for new table
 
-                # Add separator between entries (except for first)
+                # Add separator between entries (except for first in current table)
                 if entry_count > 0:
                     renderer.render_separator()
                 
@@ -581,7 +615,7 @@ class LogFormatter:
 
         # Determine layout
         # has_fields_column = self.analyzer.should_show_fields_column(entries) # Removed analyzer
-        layout = self.layout_calculator.calculate_layout() # Always 3-column for batch
+        layout = self._get_current_layout() # Always 3-column for batch
 
         # Render table
         renderer = TableRenderer(layout)
