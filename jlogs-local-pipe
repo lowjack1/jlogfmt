@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Simple pipe wrapper for stdin processing
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Check if we have stdin
+if [ -t 0 ]; then
+    echo "❗ This script is designed to receive piped input"
+    echo ""
+    echo "Usage examples:"
+    echo "  python3 main.py 2>&1 | jlogs-local-pipe"
+    echo "  go run main.go 2>&1 | jlogs-local-pipe"
+    echo "  ./myservice 2>&1 | jlogs-local-pipe"
+    echo ""
+    echo "For file-based monitoring, use: jlogs-local /path/to/file.log"
+    exit 1
+fi
+
+# Process the piped input with jlogfmt
+"$SCRIPT_DIR/jlogfmt-local" --stdin
