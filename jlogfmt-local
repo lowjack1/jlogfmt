@@ -1,0 +1,165 @@
+#!/bin/bash
+
+set -e
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+GRAY='\033[0;37m'
+DIM_GRAY='\033[2;37m'
+NC='\033[0m' # No Color
+BOLD='\033[1m'
+
+# Default values
+FOLLOW=false
+HOURS=1
+ERRORS_ONLY=false
+SOURCE_TYPE=""
+SOURCE_PATH=""
+LINES=100
+
+# Function to show help
+show_help() {
+    echo -e "${BOLD}jlogfmt-local - JSON Log Formatter for Local Services${NC}"
+    echo -e "${BOLD}Usage:${NC}"
+    echo -e "  $0 [options]\n"
+    echo -e "${BOLD}Options:${NC}"
+    echo -e "  -f, --follow         Follow logs in real-time"
+    echo -e "  -h, --hours N        Show logs from last N hours (for file mode, default: 1)"
+    echo -e "  -l, --lines N        Show last N lines (default: 100)"
+    echo -e "  -e, --errors         Show only errors and warnings"
+    echo -e "  --file PATH          Read from log file"
+    echo -e "  --stdin              Read from stdin (pipe mode)"
+    echo -e "  --help               Show this help\n"
+    echo -e "${BOLD}Examples:${NC}"
+    echo -e "  ${CYAN}# Pipe from running service${NC}"
+    echo -e "  python3 main.py 2>&1 | $0 --stdin"
+    echo -e "  go run main.go 2>&1 | $0 --stdin"
+    echo -e ""
+    echo -e "  ${CYAN}# Monitor log file${NC}"
+    echo -e "  $0 --file /path/to/app.log -f"
+    echo -e "  $0 --file ./logs/myapp.log -e"
+    echo -e ""
+    echo -e "  ${CYAN}# Show recent logs from file${NC}"
+    echo -e "  $0 --file /var/log/myapp.log -l 50"
+    echo -e "  $0 --file ./app.log -h 2"
+}
+
+# Function to format and colorize logs
+format_logs() {
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    python3 "$SCRIPT_DIR/jlogfmt_core.py"
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -f|--follow)
+            FOLLOW=true
+            shift
+            ;;
+        -h|--hours)
+            HOURS="$2"
+            shift 2
+            ;;
+        -l|--lines)
+            LINES="$2"
+            shift 2
+            ;;
+        -e|--errors)
+            ERRORS_ONLY=true
+            shift
+            ;;
+        --file)
+            SOURCE_TYPE="file"
+            SOURCE_PATH="$2"
+            shift 2
+            ;;
+        --stdin)
+            SOURCE_TYPE="stdin"
+            shift
+            ;;
+        --help)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+# Check if source is specified
+if [ -z "$SOURCE_TYPE" ]; then
+    echo -e "${RED}Error: Source type is required${NC}"
+    echo "Use --file PATH or --stdin to specify the log source"
+    echo "Use --help for more information"
+    exit 1
+fi
+
+# Handle file source
+if [ "$SOURCE_TYPE" = "file" ]; then
+    if [ ! -f "$SOURCE_PATH" ]; then
+        echo -e "${RED}Error: Log file '$SOURCE_PATH' not found${NC}"
+        exit 1
+    fi
+    
+    echo -e "${BOLD}${BLUE}jlogfmt-local - JSON Log Formatter${NC} ${DIM_GRAY}(File Mode)${NC}"
+    echo -e "${GRAY}File: $SOURCE_PATH${NC}"
+    
+    if [ "$FOLLOW" = true ]; then
+        echo -e "${GRAY}Mode: Following file in real-time (Ctrl+C to exit)${NC}"
+        echo ""
+        
+        if [ "$ERRORS_ONLY" = true ]; then
+            export JLOGFMT_STREAMING=true
+            tail -f "$SOURCE_PATH" | grep -E "(ERROR|WARNING|error|warning)" | format_logs
+        else
+            export JLOGFMT_STREAMING=true
+            tail -f "$SOURCE_PATH" | format_logs
+        fi
+    else
+        if [ "$HOURS" != "1" ]; then
+            echo -e "${GRAY}Showing logs from: last $HOURS hour(s)${NC}"
+            echo ""
+            # For hour-based filtering, use find to get files modified in last N hours
+            # then use tail to get recent lines
+            if [ "$ERRORS_ONLY" = true ]; then
+                tail -n "$LINES" "$SOURCE_PATH" | grep -E "(ERROR|WARNING|error|warning)" | format_logs
+            else
+                tail -n "$LINES" "$SOURCE_PATH" | format_logs
+            fi
+        else
+            echo -e "${GRAY}Showing last $LINES lines${NC}"
+            echo ""
+            
+            if [ "$ERRORS_ONLY" = true ]; then
+                tail -n "$LINES" "$SOURCE_PATH" | grep -E "(ERROR|WARNING|error|warning)" | format_logs
+            else
+                tail -n "$LINES" "$SOURCE_PATH" | format_logs
+            fi
+        fi
+    fi
+
+# Handle stdin source
+elif [ "$SOURCE_TYPE" = "stdin" ]; then
+    echo -e "${BOLD}${BLUE}jlogfmt-local - JSON Log Formatter${NC} ${DIM_GRAY}(Pipe Mode)${NC}"
+    echo -e "${GRAY}Source: stdin (piped input)${NC}"
+    echo -e "${GRAY}Mode: Processing incoming logs${NC}"
+    echo ""
+    
+    if [ "$ERRORS_ONLY" = true ]; then
+        export JLOGFMT_STREAMING=true
+        grep -E "(ERROR|WARNING|error|warning)" | format_logs
+    else
+        export JLOGFMT_STREAMING=true
+        format_logs
+    fi
+fi

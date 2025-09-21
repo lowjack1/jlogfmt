@@ -64,22 +64,34 @@ cd /path/to/project
 ```
 
 This creates convenient aliases:
+
+**For systemd services:**
 - `jlogs` - Main log viewer command with simple interface
 - `jlogfmt` - Advanced JSON log formatter with full options
+
+**For local services (python3 main.py, golang, etc.):**
+- `jlogs-local-pipe` - Process piped output from local services
+- `jlogs-local` - View log files with simple interface
+- `jlogfmt-local` - Advanced JSON log formatter for local services
 
 ### Manual Usage
 ```bash
 # Make executable
-chmod +x jlogfmt jlogs
+chmod +x jlogfmt jlogs jlogfmt-local jlogs-local jlogs-local-pipe
 
-# Use directly
+# Use directly - systemd services
 ./jlogfmt -s myservice -f
 ./jlogs myservice table
+
+# Use directly - local services
+python3 main.py 2>&1 | ./jlogs-local-pipe
+./jlogfmt-local --file /path/to/app.log -f
+./jlogs-local /path/to/app.log table
 ```
 
 ## 📖 Usage
 
-### Basic Commands (jlogs wrapper)
+### 🏢 Systemd Services (jlogs wrapper)
 ```bash
 # View recent logs in beautiful table format
 jlogs myservice table
@@ -94,7 +106,39 @@ jlogs myservice errors
 jlogs myservice today
 ```
 
-### Advanced Commands (jlogfmt direct)
+### 🏠 Local Services (jlogs-local wrapper)
+
+#### For piped output from running services:
+```bash
+# Python service
+python3 main.py 2>&1 | jlogs-local-pipe
+
+# Golang service  
+go run main.go 2>&1 | jlogs-local-pipe
+
+# Any executable with error filtering
+./myservice 2>&1 | jlogfmt-local --stdin -e
+
+# Docker container logs
+docker logs -f mycontainer 2>&1 | jlogs-local-pipe
+```
+
+#### For log files:
+```bash
+# View recent logs in table format
+jlogs-local /path/to/app.log table
+
+# Follow log file in real-time
+jlogs-local /path/to/app.log follow
+
+# Show only errors and warnings
+jlogs-local /path/to/app.log errors
+
+# View last 50 lines
+jlogs-local /path/to/app.log tail
+```
+
+### 🏢 Advanced Systemd Commands (jlogfmt direct)
 ```bash
 # Beautiful table format (default: last hour)
 jlogfmt -s myservice
@@ -115,9 +159,27 @@ jlogfmt -s myservice -e
 jlogfmt -s nginx -e -f    # Follow only errors in table format
 ```
 
+### 🏠 Advanced Local Service Commands (jlogfmt-local direct)
+```bash
+# Monitor log file in real-time
+jlogfmt-local --file /path/to/app.log -f
+
+# Show last 100 lines from file
+jlogfmt-local --file /path/to/app.log -l 100
+
+# Show only errors from file
+jlogfmt-local --file /path/to/app.log -e
+
+# Process piped input with error filtering
+python3 main.py 2>&1 | jlogfmt-local --stdin -e
+
+# Follow log file and show only errors
+jlogfmt-local --file /var/log/myapp.log -f -e
+```
+
 ### Command Reference
 
-#### jlogfmt Options
+#### jlogfmt Options (Systemd Services)
 ```
 -s, --service NAME   Service name (required)
 -f, --follow         Follow logs in real-time
@@ -127,7 +189,18 @@ jlogfmt -s nginx -e -f    # Follow only errors in table format
 --help               Show help message
 ```
 
-#### jlogs Commands
+#### jlogfmt-local Options (Local Services)
+```
+--file PATH          Read from log file (required for file mode)
+--stdin              Read from stdin/pipe (required for pipe mode)
+-f, --follow         Follow logs in real-time (file mode only)
+-l, --lines N        Show last N lines (default: 100)
+-h, --hours N        Show logs from last N hours (file mode, default: 1)
+-e, --errors         Show only errors and warnings
+--help               Show help message
+```
+
+#### jlogs Commands (Systemd Services)
 ```
 jlogs <service> [command]
 
@@ -138,6 +211,27 @@ Commands:
   table            Show last hour in table format (jlogfmt)
   table-follow     Follow logs in table format (jlogfmt)
   help             Show help message
+```
+
+#### jlogs-local Commands (Local Services)
+```
+jlogs-local <file_path> [command]
+
+Commands:
+  follow           Follow log file in real-time
+  errors           Show only errors and warnings from file
+  tail             Show recent logs from file
+  table            Show logs in table format
+  table-follow     Follow logs in table format
+  help             Show help message
+```
+
+#### jlogs-local-pipe (Pipe Processor)
+```
+# Simple pipe processor for stdin
+python3 main.py 2>&1 | jlogs-local-pipe
+go run main.go 2>&1 | jlogs-local-pipe
+./myservice 2>&1 | jlogs-local-pipe
 ```
 
 ## 🏗️ Architecture
@@ -185,7 +279,7 @@ jlogfmt automatically determines the optimal table layout:
 
 ## 🚀 Examples
 
-### Development Workflow
+### 🏢 Systemd Services Development Workflow
 ```bash
 # Quick error check
 jlogs myservice errors
@@ -197,7 +291,51 @@ jlogs myservice table-follow
 jlogfmt -s myservice -d 2025-01-20 -e
 ```
 
-### Production Monitoring
+### 🏠 Local Services Development Workflow
+
+#### Python Development
+```bash
+# Debug a Python Flask/Django app
+python3 manage.py runserver 2>&1 | jlogs-local-pipe
+
+# FastAPI with uvicorn
+uvicorn main:app --reload 2>&1 | jlogs-local-pipe
+
+# Monitor Python app log file
+jlogs-local /var/log/myapp.log table-follow
+
+# Show only errors from Python app
+python3 main.py 2>&1 | jlogfmt-local --stdin -e
+```
+
+#### Golang Development
+```bash
+# Monitor Go application
+go run main.go 2>&1 | jlogs-local-pipe
+
+# Build and run with logging
+go build -o myapp && ./myapp 2>&1 | jlogs-local-pipe
+
+# Monitor Go service log file
+jlogs-local ./logs/go-service.log follow
+
+# Debug Go app with error filtering
+./mygoapp 2>&1 | jlogfmt-local --stdin -e
+```
+
+#### Docker and Container Workflows
+```bash
+# Monitor Docker container logs
+docker logs -f mycontainer 2>&1 | jlogs-local-pipe
+
+# Docker compose logs
+docker-compose logs -f myservice 2>&1 | jlogs-local-pipe
+
+# Kubernetes pod logs
+kubectl logs -f pod/mypod 2>&1 | jlogs-local-pipe
+```
+
+### 🏢 Production Monitoring (Systemd)
 ```bash
 # Monitor multiple services
 jlogfmt -s nginx -f &
@@ -208,13 +346,28 @@ jlogfmt -s database -f &
 jlogfmt -s nginx -e -h 24    # Last 24 hours of errors
 ```
 
+### 🏠 Production Monitoring (Local Services)
+```bash
+# Monitor multiple log files
+jlogfmt-local --file /var/log/app1.log -f &
+jlogfmt-local --file /var/log/app2.log -f &
+jlogfmt-local --file /var/log/database.log -f &
+
+# Error analysis from files
+jlogfmt-local --file /var/log/nginx.log -e -l 1000
+```
+
 ### Log Analysis
 ```bash
-# Pipe to other tools
+# Systemd services - pipe to other tools
 jlogfmt -s myservice -h 6 | grep "messageID=abc-123"
+
+# Local services - pipe to other tools  
+jlogfmt-local --file /var/log/app.log -l 500 | grep "userID=123"
 
 # Save formatted output
 jlogfmt -s myservice -d 2025-01-20 > formatted_logs.txt
+jlogfmt-local --file /var/log/app.log -l 1000 > local_logs.txt
 ```
 
 ## 🐛 Troubleshooting
@@ -238,21 +391,40 @@ echo '{"level": "INFO", "message": "test"}' | python3 jlogfmt_core.py
 
 jlogfmt is designed to be a drop-in replacement for basic log viewing:
 
+#### For Systemd Services
 ```bash
 # Instead of journalctl
 journalctl -u myservice -f
 # Use
 jlogs myservice table-follow
 
-# Instead of tail
-tail -f /var/log/myservice.log
-# Use  
-jlogfmt -s myservice -f
-
 # Instead of grep + journalctl
 journalctl -u myservice | grep ERROR
 # Use
 jlogfmt -s myservice -e
+```
+
+#### For Local Services and Log Files
+```bash
+# Instead of tail
+tail -f /var/log/myservice.log
+# Use  
+jlogs-local /var/log/myservice.log follow
+
+# Instead of grep + tail
+tail -n 100 /var/log/app.log | grep ERROR
+# Use
+jlogfmt-local --file /var/log/app.log -l 100 -e
+
+# Instead of less for viewing logs
+less /var/log/app.log
+# Use
+jlogs-local /var/log/app.log table
+
+# Instead of complex piping for live monitoring
+python3 main.py 2>&1 | grep ERROR
+# Use
+python3 main.py 2>&1 | jlogfmt-local --stdin -e
 ```
 
 ## 📈 Future Enhancements

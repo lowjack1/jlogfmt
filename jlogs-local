@@ -1,0 +1,114 @@
+#!/bin/bash
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Parse arguments
+if [[ $# -eq 0 ]]; then
+    echo "❗ Source is required."
+    echo "Use 'jlogs-local help' to see usage."
+    exit 1
+elif [[ $# -eq 1 ]]; then
+    case "$1" in
+        "help"|"h"|"--help")
+            SOURCE=""
+            COMMAND="help"
+            ;;
+        *)
+            SOURCE="$1"
+            COMMAND=""
+            ;;
+    esac
+else
+    SOURCE="$1"
+    COMMAND="$2"
+fi
+
+case "${COMMAND:-}" in
+    "follow"|"f")
+        if [[ "$SOURCE" == /* ]] || [[ "$SOURCE" == ./* ]]; then
+            # File path
+            echo "🔄 Following $SOURCE file (Ctrl+C to exit)..."
+            "$SCRIPT_DIR/jlogfmt-local" --file "$SOURCE" -f
+        else
+            echo "❗ For follow mode, please provide a file path"
+            echo "Example: jlogs-local /path/to/app.log follow"
+            exit 1
+        fi
+        ;;
+    "errors"|"e")
+        if [[ "$SOURCE" == /* ]] || [[ "$SOURCE" == ./* ]]; then
+            echo "❌ Showing errors and warnings from $SOURCE..."
+            "$SCRIPT_DIR/jlogfmt-local" --file "$SOURCE" -e
+        else
+            echo "❗ For errors mode, please provide a file path"
+            echo "Example: jlogs-local /path/to/app.log errors"
+            exit 1
+        fi
+        ;;
+    "tail"|"t")
+        if [[ "$SOURCE" == /* ]] || [[ "$SOURCE" == ./* ]]; then
+            echo "📄 Showing recent logs from $SOURCE..."
+            "$SCRIPT_DIR/jlogfmt-local" --file "$SOURCE" -l 100
+        else
+            echo "❗ For tail mode, please provide a file path"
+            echo "Example: jlogs-local /path/to/app.log tail"
+            exit 1
+        fi
+        ;;
+    "table")
+        if [[ "$SOURCE" == /* ]] || [[ "$SOURCE" == ./* ]]; then
+            echo "📊 Table format for $SOURCE..."
+            "$SCRIPT_DIR/jlogfmt-local" --file "$SOURCE" -l 100
+        else
+            echo "❗ For table mode, please provide a file path"
+            echo "Example: jlogs-local /path/to/app.log table"
+            exit 1
+        fi
+        ;;
+    "table-follow")
+        if [[ "$SOURCE" == /* ]] || [[ "$SOURCE" == ./* ]]; then
+            echo "📊 Table format (following) for $SOURCE..."
+            "$SCRIPT_DIR/jlogfmt-local" --file "$SOURCE" -f
+        else
+            echo "❗ For table-follow mode, please provide a file path"
+            echo "Example: jlogs-local /path/to/app.log table-follow"
+            exit 1
+        fi
+        ;;
+    "help"|"h"|"--help")
+        echo "🔍 jlogs-local - Local Service Log Viewer:"
+        echo ""
+        echo "Usage: jlogs-local <file_path|pipe> [command]"
+        echo ""
+        echo "Commands:"
+        echo "  follow           Follow log file in real-time"
+        echo "  errors           Show only errors and warnings from file"
+        echo "  tail             Show recent logs from file"
+        echo "  table            Show logs in table format"
+        echo "  table-follow     Follow logs in table format"
+        echo "  help             Show this help message"
+        echo ""
+        echo "File Examples:"
+        echo "  jlogs-local /var/log/myapp.log              # Show recent logs"
+        echo "  jlogs-local ./app.log follow                # Follow log file"
+        echo "  jlogs-local /path/to/app.log errors         # Show errors only"
+        echo "  jlogs-local ./logs/service.log table        # Table format"
+        echo ""
+        echo "Pipe Examples:"
+        echo "  python3 main.py 2>&1 | jlogs-local-pipe    # Pipe Python app"
+        echo "  go run main.go 2>&1 | jlogs-local-pipe     # Pipe Go app"
+        echo "  ./myservice 2>&1 | jlogs-local-pipe        # Pipe any service"
+        echo ""
+        echo "Advanced: Use ./jlogfmt-local for more options"
+        ;;
+    *)
+        if [[ "$SOURCE" == /* ]] || [[ "$SOURCE" == ./* ]]; then
+            echo "📄 Showing recent logs from $SOURCE..."
+            "$SCRIPT_DIR/jlogfmt-local" --file "$SOURCE" -l 100
+        else
+            echo "❗ Please provide a valid file path or use 'help' for usage"
+            echo "Example: jlogs-local /path/to/app.log"
+            exit 1
+        fi
+        ;;
+esac
