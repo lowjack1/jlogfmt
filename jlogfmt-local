@@ -1,5 +1,8 @@
 #!/bin/bash
 
+
+# Reap the tail/formatter pipeline if this script exits for any reason.
+trap 'kill 0' EXIT HUP INT TERM
 set -e
 
 # Colors
