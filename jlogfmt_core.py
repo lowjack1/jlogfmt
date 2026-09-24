@@ -20,6 +20,7 @@ Version: 1.0.0
 """
 
 import json
+import signal
 import sys
 import re
 import os
@@ -612,6 +613,10 @@ class LogFormatter:
                 # Flush output for real-time display
                 sys.stdout.flush()
 
+            except (BrokenPipeError, OSError):
+                # Output is gone (terminal closed, pipe broken). Stop instead of
+                # formatting forever for a reader that no longer exists.
+                return
             except Exception as e:
                 self.logger.debug(f"Failed to parse line: {e}")
                 continue
@@ -671,6 +676,12 @@ def setup_logging(level: str = "WARNING") -> None:
 def main() -> None:
     """Main entry point."""
     setup_logging()
+
+    # Exit when the controlling terminal goes away; without this the process
+    # survives its session and keeps consuming CPU indefinitely.
+    signal.signal(signal.SIGHUP, lambda *_: sys.exit(0))
+    # Restore default SIGPIPE so a closed downstream terminates us normally.
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
     formatter = LogFormatter()
     formatter.format_logs()
